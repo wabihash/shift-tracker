@@ -1,0 +1,80 @@
+/* Dark slate theme overrides for React Big Calendar. */
+.rbc-calendar {
+  color: #cbd5e1;
+  background: #0f172a;
+  font-family: inherit;
+}
+
+.rbc-toolbar {
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  color: #e2e8f0;
+}
+.rbc-toolbar-label { font-size: 0.875rem; font-weight: 600; }
+.rbc-toolbar button {
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  background: #0f172a;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.rbc-toolbar button:hover,
+.rbc-toolbar button:focus-visible { color: #f8fafc; border-color: #64748b; background: #1e293b; }
+.rbc-toolbar button.rbc-active,
+.rbc-toolbar button.rbc-active:hover { color: #f8fafc; border-color: #6366f1; background: #312e81; box-shadow: none; }
+
+.rbc-header,
+.rbc-time-header,
+.rbc-time-header-content,
+.rbc-time-view,
+.rbc-time-content,
+.rbc-time-gutter,
+.rbc-day-bg + .rbc-day-bg,
+.rbc-header + .rbc-header,
+.rbc-time-content > * + * > *,
+.rbc-day-slot .rbc-time-slot,
+.rbc-timeslot-group { border-color: #1e293b; }
+.rbc-time-view,
+.rbc-month-view,
+.rbc-agenda-view { border: 1px solid #1e293b; border-radius: 0.5rem; overflow: hidden; }
+.rbc-time-header,
+.rbc-time-content,
+.rbc-month-view,
+.rbc-agenda-view { background: #0f172a; }
+.rbc-header { padding: 0.5rem 0.25rem; color: #94a3b8; font-weight: 600; }
+.rbc-label,
+.rbc-agenda-date-cell,
+.rbc-agenda-time-cell { color: #94a3b8; }
+.rbc-off-range-bg { background: #0b1220; }
+.rbc-today { background: rgb(30 41 59 / 55%); }
+.rbc-current-time-indicator { height: 2px; background: #818cf8; }
+.rbc-event { border: 1px solid rgb(148 163 184 / 20%); box-shadow: 0 1px 2px rgb(0 0 0 / 25%); }
+.rbc-event:focus { outline: 2px solid #c7d2fe; outline-offset: 1px; }
+.rbc-show-more { color: #a5b4fc; background: transparent; }
+.rbc-overlay { color: #e2e8f0; border: 1px solid #334155; background: #0f172a; box-shadow: 0 12px 24px rgb(0 0 0 / 35%); }
+.rbc-overlay-header { border-color: #1e293b; }
+
+/* Sleep hours are marked by slotPropGetter; crosshatch communicates restricted time. */
+.rbc-time-slot.sleep-slot,
+.sleep-slot {
+  background-color: rgb(49 46 129 / 20%);
+  background-image: repeating-linear-gradient(135deg, rgb(129 140 248 / 10%) 0 1px, transparent 1px 7px);
+}
+.rbc-time-slot.sleep-slot:hover,
+.sleep-slot:hover { background-color: rgb(49 46 129 / 30%); }
+
+/* Keep drag previews visually distinct without changing their geometry. */
+.rbc-addons-dnd .rbc-addons-dnd-dragged-event { opacity: 0.28; }
+.rbc-addons-dnd .rbc-addons-dnd-drag-preview {
+  border: 1px dashed #a5b4fc !important;
+  background: rgb(99 102 241 / 28%) !important;
+  color: #f8fafc !important;
+  box-shadow: none;
+  pointer-events: none;
+}
+.rbc-addons-dnd .rbc-addons-dnd-resize-ns-anchor,
+.rbc-addons-dnd .rbc-addons-dnd-resize-ew-anchor { color: #e0e7ff; }
+.rbc-slot-selecting { background-color: rgb(99 102 241 / 18%); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rbc-toolbar button { transition: none; }
+}

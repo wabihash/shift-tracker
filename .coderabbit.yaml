@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+
+knowledge_base:
+  opt_out: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  review_status: true
+  review_details: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_reviewers: false
+  auto_title_placeholder: true
+  abort_on_close: true
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: off
+      threshold: 80
+    title:
+      mode: warning
+      requirements: |
+        PR title should describe the user-facing or architectural change, not
+        only the files touched.
+    description:
+      mode: warning
+      requirements: |
+        Include summary, test plan, and any tenant-isolation or time-engine
+        risk notes.
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches:
+      - main
+      - master
+    ignore_title_keywords:
+      - wip
+      - "[skip review]"
+  path_filters:
+    - "!backend/alembic/versions/**"
+    - "!**/package-lock.json"
+    - "!**/pnpm-lock.yaml"
+    - "!**/yarn.lock"
+    - "!**/poetry.lock"
+    - "!**/uv.lock"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/.vite/**"
+    - "!**/node_modules/**"
+    - "!**/__pycache__/**"
+    - "!**/*.pyc"
+    - "!backend/schedule.db"
+    - "!**/*.min.js"
+    - "!**/*.map"
+  path_instructions:
+    - path: "**"
+      instructions: |
+        You are reviewing the Dynamic Shift Architecture & Time Tracking Engine.
+        Stack: FastAPI + SQLModel + Clerk JWT (backend); React 19 + Vite +
+        TypeScript + TanStack Query + Zustand + Recharts + React Big Calendar
+        (frontend).
+
+        Produce:
+        1. An auto-summary of intent, risk, and residual unknowns.
+        2. A walk-through table of changed files with purpose and risk (Low/Med/High).
+        3. Findings ordered by severity. Require proof (file + behavior).
+
+        Architectural consistency:
+        - Tenant key is clerk_user_id from get_current_user; never trust client-supplied user ids.
+        - Time math must use UTC anchors; do not mix naive local timestamps with ISO UTC strings.
+        - Sleep planning window defaults: bedtime cutoff 22:15 (10:15 PM) and wake 05:41 AM.
+        - Quota: net_minutes = max(0, gross_minutes - deducted_minutes). Caps fire when
+          completed_hours >= activity weekly_target_hours (target > 0).
+        - Variance: LATE_START if actual_start - scheduled_start > 5 minutes;
+          EARLY_START if < -5 minutes; EARLY_EXIT if scheduled_end - actual_end > 5 minutes.
+
+    - path: "backend/app/**/*.py"
+      instructions: |
+        Highest scrutiny. Verify every protected route uses
+        clerk_user_id: str = Depends(get_current_user) (or equivalent) and scopes
+        queries by clerk_user_id / profile_id owned by that user.
+        Flag IDOR if updates/deletes use only resource id.
+        Check JWT handling: RS256, issuer, sub required, 401 on invalid/expired tokens.
+        Check SQLModel relationships and FK ownership before writes.
+        Reject leaking other tenants' SessionLog, PlannedShift, Activity, or Profile rows.
+
+    - path: "backend/app/routers/sessions.py"
+      instructions: |
+        Re-check net minutes bounding at 0, variance threshold (5 minutes), and
+        that EARLY_EXIT does not silently drop late-start telemetry unless product
+        intent is documented. Confirm scheduled_* fields are not client-trusted
+        without planned-shift ownership checks.
+
+    - path: "backend/app/routers/analytics.py"
+      instructions: |
+        Verify cap alerts, percentages clamped to 100, remaining_hours >= 0, and
+        lost-minute sums only include LATE_START variance_minutes plus deducted_minutes.
+        Confirm week_start/week_end filters use logged_date and tenant clerk_user_id.
+
+    - path: "frontend/src/**/*.{ts,tsx}"
+      instructions: |
+        Check TanStack Query keys match invalidation on session save (analytics, sessions).
+        Timer elapsed time must use Date.now() - utcStartAnchor while running.
+        Calendar sleep shading must respect profile wake_time / bedtime_limit.
+        Never attach Authorization tokens to logs. Prefer ApiError handling over empty catch.
+
+chat:
+  auto_reply: true
+  art: false

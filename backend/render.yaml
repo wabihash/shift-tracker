@@ -1,0 +1,25 @@
+# Render Blueprint for the FastAPI API.
+# Use this file with backend/ as the service root directory.
+
+services:
+  - type: web
+    name: shift-tracker-api
+    runtime: python
+    plan: starter
+    region: oregon
+    pythonVersion: "3.12.6"
+    buildCommand: pip install --no-cache-dir -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
