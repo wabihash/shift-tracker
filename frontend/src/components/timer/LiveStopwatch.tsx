@@ -1,18 +1,24 @@
-import { useQuery } from "@tanstack/react-query";
-import { ClockPlus, Pause, Play, Square, Zap } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ClockPlus, Pause, Play, Square } from "lucide-react";
 import {
+  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactElement,
 } from "react";
 
 import { getActivities } from "../../api/activities";
-import { getPlannedShifts } from "../../api/planner";
-import { useModeStore } from "../../stores/useModeStore";
+import { getProfile } from "../../api/profile";
+import { submitOrQueueSession } from "../../services/sessionSubmission";
+import { useAuthToken } from "../../auth/AuthTokenContext";
+import { useShiftEngine, getBedtimeBoundary } from "../../hooks/useShiftEngine";
+import { useToast } from "../common/ToastProvider";
+import { getCadenceMessage, getRunningFocusCue } from "../../config/cadenceMessages";
+import { useShiftStore } from "../../stores/useShiftStore";
 import {
   selectElapsedSeconds,
+  selectBreakRemainingSeconds,
   useTimerStore,
 } from "../../stores/useTimerStore";
 
@@ -28,65 +34,64 @@ function formatElapsed(totalSeconds: number): string {
     .join(":");
 }
 
-function startOfDayIso(date: Date): string {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy.toISOString();
-}
-
-function endOfDayIso(date: Date): string {
-  const copy = new Date(date);
-  copy.setHours(23, 59, 59, 999);
-  return copy.toISOString();
-}
-
 interface SessionCapture {
   grossSeconds: number;
   actualStartIso: string;
   actualEndIso: string;
   activityId: number;
   plannedShiftId: number | null;
+  shiftNumber: number | null;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  breakOverrunMinutes: number;
 }
 
-export function LiveStopwatch(): ReactElement {
+interface LiveStopwatchProps {
+  startRequest?: number;
+  manualSessionRequest?: number;
+}
+
+export function LiveStopwatch({
+  startRequest = 0,
+  manualSessionRequest = 0,
+}: LiveStopwatchProps): ReactElement {
+  const token = useAuthToken();
+  const queryClient = useQueryClient();
+  const { notify, sessionSaved } = useToast();
   const status = useTimerStore((state) => state.status);
   const activeActivityId = useTimerStore((state) => state.activeActivityId);
-  const plannedShiftId = useTimerStore((state) => state.plannedShiftId);
+  const timerKind = useTimerStore((state) => state.timerKind);
+  const scheduledEndIsoStored = useTimerStore((state) => state.scheduledEndIso);
+  const runningShiftNumber = useShiftStore((state) => state.currentShiftNumber);
+  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile, enabled: !!token });
   const tickTs = useTimerStore((state) => state.tickTs);
   const startTimer = useTimerStore((state) => state.startTimer);
   const pauseTimer = useTimerStore((state) => state.pauseTimer);
   const resumeTimer = useTimerStore((state) => state.resumeTimer);
   const stopTimer = useTimerStore((state) => state.stopTimer);
   const tick = useTimerStore((state) => state.tick);
-
-  const activeMode = useModeStore((state) => state.activeMode);
+  const startBreak = useTimerStore((state) => state.startBreak);
+  const resetTimer = useTimerStore((state) => state.resetTimer);
 
   const [selectedActivityId, setSelectedActivityId] = useState<number | "">("");
-  const [selectedPlannedShiftId, setSelectedPlannedShiftId] = useState<
-    number | ""
-  >("");
   const [deductionOpen, setDeductionOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
   const [sessionCapture, setSessionCapture] = useState<SessionCapture | null>(
     null,
   );
+  const [accentGlow, setAccentGlow] = useState(false);
 
-  const sessionWallStartRef = useRef<string | null>(null);
+  const bedtimeCommitRef = useRef<string | null>(null);
+  const previousStartRequest = useRef(startRequest);
+  const previousManualRequest = useRef(manualSessionRequest);
 
   const activitiesQuery = useQuery({
     queryKey: ["activities"],
     queryFn: getActivities,
+    enabled: !!token,
   });
 
-  const todayRange = useMemo(() => {
-    const now = new Date();
-    return { start: startOfDayIso(now), end: endOfDayIso(now) };
-  }, []);
-
-  const plannedShiftsQuery = useQuery({
-    queryKey: ["planned-shifts", todayRange.start, todayRange.end],
-    queryFn: () => getPlannedShifts(todayRange.start, todayRange.end),
-  });
+  const shiftEngine = useShiftEngine(profileQuery.data?.shift_rules ?? [], status, timerKind);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => tick(), 1000);
@@ -97,57 +102,147 @@ export function LiveStopwatch(): ReactElement {
     if (activeActivityId) {
       setSelectedActivityId(activeActivityId);
     }
-    if (plannedShiftId) {
-      setSelectedPlannedShiftId(plannedShiftId);
-    }
-  }, [activeActivityId, plannedShiftId]);
+  }, [activeActivityId]);
 
   const elapsedSeconds = useTimerStore(selectElapsedSeconds);
+  const breakRemainingSeconds = selectBreakRemainingSeconds(useTimerStore.getState());
+  const displayedSeconds = timerKind === "break" ? breakRemainingSeconds : elapsedSeconds;
+  const shiftWindowClosed = timerKind === "work" && status !== "idle" && !!scheduledEndIsoStored && shiftEngine.now.getTime() > Date.parse(scheduledEndIsoStored);
   void tickTs;
 
-  const filteredPlannedShifts = useMemo(() => {
-    if (!selectedActivityId) {
-      return plannedShiftsQuery.data ?? [];
-    }
-    return (plannedShiftsQuery.data ?? []).filter(
-      (shift) => shift.activity_id === selectedActivityId,
-    );
-  }, [plannedShiftsQuery.data, selectedActivityId]);
+  const activeShift = shiftEngine.activeShift;
 
   const canStart =
     typeof selectedActivityId === "number" &&
+    !!activeShift &&
     status === "idle" &&
     !deductionOpen;
 
-  const handleStart = () => {
+  const handleStart = useCallback(() => {
     if (typeof selectedActivityId !== "number") {
       return;
     }
-    sessionWallStartRef.current = new Date().toISOString();
-    startTimer(
-      selectedActivityId,
-      typeof selectedPlannedShiftId === "number"
-        ? selectedPlannedShiftId
-        : null,
-    );
-  };
+    const start = shiftEngine.now;
+    const cutoff = shiftEngine.precedingBreakEnd;
+    const breakOverrunMinutes = cutoff && start > cutoff ? Math.floor((start.getTime() - cutoff.getTime()) / 60_000) : 0;
+    const bedBoundary = getBedtimeBoundary(start, profileQuery.data?.bed_cutoff ?? "22:15");
+    startTimer(selectedActivityId, null, {
+      shiftNumber: activeShift?.rule.shift_number ?? runningShiftNumber,
+      scheduledStartIso: activeShift?.scheduledStart.toISOString() ?? null,
+      scheduledEndIso: activeShift?.scheduledEnd.toISOString() ?? null,
+      breakOverrunMinutes,
+      bedtimeLimitIso: bedBoundary.toISOString(),
+    });
+  }, [activeShift, profileQuery.data?.bed_cutoff, runningShiftNumber, selectedActivityId, shiftEngine.now, shiftEngine.precedingBreakEnd, startTimer]);
+
+  useEffect(() => {
+    if (previousStartRequest.current === startRequest) return;
+    previousStartRequest.current = startRequest;
+    if (canStart) {
+      handleStart();
+    } else if (status === "idle") {
+      notify({
+        type: "info",
+        title: "Choose an activity first",
+        message: "Select an activity in the Planner view, then start the stopwatch.",
+      });
+    }
+  }, [canStart, handleStart, notify, startRequest, status]);
+
+  useEffect(() => {
+    if (previousManualRequest.current === manualSessionRequest) return;
+    previousManualRequest.current = manualSessionRequest;
+    setManualSessionOpen(true);
+  }, [manualSessionRequest]);
+
+  useEffect(() => {
+    if ((status !== "running" && status !== "paused") || timerKind !== "work" || !activeActivityId) return;
+    const state = useTimerStore.getState();
+    const autoActivityId = state.activeActivityId;
+    const actualStart = state.actualStartIso ? new Date(state.actualStartIso) : null;
+    if (!actualStart || !autoActivityId) return;
+    const bedtimeBoundary = state.bedtimeLimitIso
+      ? new Date(state.bedtimeLimitIso)
+      : getBedtimeBoundary(actualStart, profileQuery.data?.bed_cutoff ?? "22:15");
+    const boundary = shiftEngine.now >= bedtimeBoundary ? bedtimeBoundary : null;
+    if (!boundary || bedtimeCommitRef.current === `${actualStart.toISOString()}|${boundary.toISOString()}`) return;
+    bedtimeCommitRef.current = `${actualStart.toISOString()}|${boundary.toISOString()}`;
+    const grossSeconds = Math.min(selectElapsedSeconds(state), Math.max(0, (boundary.getTime() - actualStart.getTime()) / 1000));
+    const grossMinutes = Math.floor(grossSeconds / 60);
+    const boundaryIso = boundary.toISOString();
+    const capture: SessionCapture = {
+      grossSeconds,
+      actualStartIso: actualStart.toISOString(),
+      actualEndIso: boundaryIso,
+      activityId: autoActivityId,
+      plannedShiftId: state.plannedShiftId,
+      shiftNumber: state.shiftNumber,
+      scheduledStart: state.scheduledStartIso,
+      scheduledEnd: state.scheduledEndIso,
+      breakOverrunMinutes: state.breakOverrunMinutes,
+    };
+    stopTimer();
+    if (grossMinutes <= 0) {
+      resetTimer();
+      return;
+    }
+    void submitOrQueueSession(
+      {
+        activity_id: capture.activityId,
+        shift_number: capture.shiftNumber,
+        planned_shift_id: capture.plannedShiftId,
+        actual_start: capture.actualStartIso,
+        actual_end: boundaryIso,
+        scheduled_start: capture.scheduledStart,
+        scheduled_end: capture.scheduledEnd,
+        gross_minutes: grossMinutes,
+        deducted_minutes: 0,
+        break_overrun_minutes: capture.breakOverrunMinutes,
+        notes: "Automatically stopped and saved at bedtime boundary.",
+        logged_date: boundaryIso.slice(0, 10),
+      },
+      queryClient,
+      {
+        profile: profileQuery.data,
+        activities: activitiesQuery.data,
+      },
+    ).then((result) => {
+      if (result.isOffline) {
+        notify({
+          type: "info",
+          title: "Offline Session",
+          message: "Saved locally (Offline). Weekly analytics updated.",
+        });
+      } else {
+        sessionSaved(grossMinutes);
+      }
+      resetTimer();
+    }).catch((error: Error) => {
+      setSessionCapture(capture);
+      setDeductionOpen(true);
+      notify({ type: "error", title: "Bedtime save failed", message: error.message || "Review and save the stopped session." });
+    });
+  }, [activeActivityId, activitiesQuery.data, notify, profileQuery.data, profileQuery.data?.bed_cutoff, queryClient, resetTimer, sessionSaved, shiftEngine.now, status, stopTimer, timerKind]);
 
   const handleStop = () => {
+    const state = useTimerStore.getState();
+    if (state.timerKind === "break") {
+      stopTimer();
+      resetTimer();
+      return;
+    }
     const endIso = new Date().toISOString();
-    const grossSeconds = selectElapsedSeconds(useTimerStore.getState());
+    const grossSeconds = selectElapsedSeconds(state);
     const activityId =
       activeActivityId ??
       (typeof selectedActivityId === "number" ? selectedActivityId : null);
 
     if (!activityId || grossSeconds <= 0) {
       stopTimer();
-      sessionWallStartRef.current = null;
       return;
     }
 
-    const actualStartIso =
-      sessionWallStartRef.current ??
-      new Date(Date.now() - grossSeconds * 1000).toISOString();
+    const actualStartIso = state.actualStartIso ?? new Date(Date.now() - grossSeconds * 1000).toISOString();
 
     stopTimer();
     setSessionCapture({
@@ -155,31 +250,17 @@ export function LiveStopwatch(): ReactElement {
       actualStartIso,
       actualEndIso: endIso,
       activityId,
-      plannedShiftId:
-        plannedShiftId ??
-        (typeof selectedPlannedShiftId === "number"
-          ? selectedPlannedShiftId
-          : null),
+      plannedShiftId: state.plannedShiftId,
+      shiftNumber: state.shiftNumber,
+      scheduledStart: state.scheduledStartIso,
+      scheduledEnd: state.scheduledEndIso,
+      breakOverrunMinutes: state.breakOverrunMinutes,
     });
     setDeductionOpen(true);
-    sessionWallStartRef.current = null;
   };
 
   return (
     <div className="space-y-4">
-      <div
-        className={`rounded-lg border px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide ${
-          activeMode === "RUSH"
-            ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
-            : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-        }`}
-      >
-        <span className="inline-flex items-center justify-center gap-2">
-          <Zap className="h-4 w-4" />
-          {activeMode === "RUSH" ? "RUSH Execution" : "STANDARD Execution"}
-        </span>
-      </div>
-
       <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
         <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
           Activity
@@ -190,7 +271,6 @@ export function LiveStopwatch(): ReactElement {
           onChange={(event) => {
             const value = event.target.value;
             setSelectedActivityId(value ? Number(value) : "");
-            setSelectedPlannedShiftId("");
           }}
           className="mb-3 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500 disabled:opacity-60"
         >
@@ -202,36 +282,26 @@ export function LiveStopwatch(): ReactElement {
           ))}
         </select>
 
-        <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
-          Planned Shift (optional)
-        </label>
-        <select
-          value={selectedPlannedShiftId}
-          disabled={status !== "idle" || !selectedActivityId}
-          onChange={(event) => {
-            const value = event.target.value;
-            setSelectedPlannedShiftId(value ? Number(value) : "");
-          }}
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500 disabled:opacity-60"
-        >
-          <option value="">No linked block</option>
-          {filteredPlannedShifts.map((shift) => (
-            <option key={shift.id} value={shift.id}>
-              {shift.title}
-            </option>
-          ))}
-        </select>
+        <p className="mt-3 text-xs text-slate-400">{runningShiftNumber ? `Active Shift ${runningShiftNumber}` : "No active shift window"}</p>
       </div>
 
-      <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-6 text-center">
+      <div className={`rounded-xl border p-6 text-center transition-all duration-500 ${accentGlow ? "border-emerald-500/50 shadow-emerald-500/10 shadow-lg" : "border-indigo-500/30 bg-indigo-500/5"}`}>
         <p className="mb-2 text-xs uppercase tracking-[0.2em] text-indigo-300">
           Live Timer
         </p>
         <p className="font-mono text-5xl font-bold tracking-wider text-slate-50 sm:text-6xl">
-          {formatElapsed(elapsedSeconds)}
+          {formatElapsed(displayedSeconds)}
         </p>
+        <div className="mx-auto mt-1 flex h-5 max-w-full items-center justify-center overflow-hidden">
+          <span className="inline-block max-w-full truncate rounded border border-slate-700/70 bg-slate-900/50 px-2 py-0.5 font-mono text-[10px] text-slate-400" title={getCadenceMessage()}>
+            {timerKind === "work" && status === "running" ? getRunningFocusCue(Math.floor(elapsedSeconds / 5) % 4) : getCadenceMessage()}
+          </span>
+        </div>
         <p className="mt-2 text-xs capitalize text-slate-400">{status}</p>
+          <p className="mt-1 text-xs text-slate-500">{runningShiftNumber ? `Shift ${runningShiftNumber}` : "No active shift"}</p>
       </div>
+
+      {shiftWindowClosed && scheduledEndIsoStored ? <div role="alert" className="rounded-lg border-2 border-rose-500 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 shadow-lg shadow-rose-950/30">Shift Window Closed at {new Date(scheduledEndIsoStored).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Stopping now will default to the scheduled end; verify overtime in the save dialog.</div> : null}
 
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -243,10 +313,11 @@ export function LiveStopwatch(): ReactElement {
           <Play className="h-4 w-4" />
           Start
         </button>
+        {shiftEngine.activeBreak && status === "idle" ? <button type="button" onClick={() => startBreak(shiftEngine.activeBreak!.scheduledEnd.toISOString())} className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-600"><span aria-hidden>☕</span>Start Break</button> : null}
         <button
           type="button"
           onClick={pauseTimer}
-          disabled={status !== "running"}
+          disabled={status !== "running" || timerKind === "break"}
           className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Pause className="h-4 w-4" />
@@ -255,7 +326,7 @@ export function LiveStopwatch(): ReactElement {
         <button
           type="button"
           onClick={resumeTimer}
-          disabled={status !== "paused"}
+          disabled={status !== "paused" || timerKind === "break"}
           className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Play className="h-4 w-4" />
@@ -268,7 +339,7 @@ export function LiveStopwatch(): ReactElement {
           className="inline-flex items-center justify-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Square className="h-4 w-4" />
-          Stop
+          {timerKind === "break" ? "End Break" : "Stop"}
         </button>
       </div>
 
@@ -289,12 +360,20 @@ export function LiveStopwatch(): ReactElement {
       {sessionCapture ? (
         <DeductionModal
           isOpen={deductionOpen}
+          onSessionSaved={() => {
+            setAccentGlow(true);
+            window.setTimeout(() => setAccentGlow(false), 2500);
+          }}
           onClose={() => {
             setDeductionOpen(false);
             setSessionCapture(null);
           }}
           activityId={sessionCapture.activityId}
           plannedShiftId={sessionCapture.plannedShiftId}
+          scheduledStart={sessionCapture.scheduledStart}
+          scheduledEnd={sessionCapture.scheduledEnd}
+          shiftNumber={sessionCapture.shiftNumber}
+          breakOverrunMinutes={sessionCapture.breakOverrunMinutes}
           grossSeconds={sessionCapture.grossSeconds}
           actualStartIso={sessionCapture.actualStartIso}
           actualEndIso={sessionCapture.actualEndIso}

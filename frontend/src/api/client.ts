@@ -122,6 +122,28 @@ function formatErrorMessage(status: number, detail: unknown): string {
   return `Request failed with status ${status}`;
 }
 
+export function safeErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
+  if (error instanceof ApiError) {
+    if (error.status === 400 || error.status === 422) {
+      const detail = typeof error.detail === "string"
+        ? error.detail.toLowerCase()
+        : JSON.stringify(error.detail ?? "").toLowerCase();
+      if (detail.includes("overlap")) return "Schedule slots overlap. Adjust the times and try again.";
+      if (detail.includes("end") && detail.includes("start")) return "End time must be after start time.";
+      if (detail.includes("shift rule") && detail.includes("not found")) return "The schedule changed. Reload it and try again.";
+      return "Check the schedule details and try again.";
+    }
+    if (error.status === 401 || error.status === 403) return "Your session may have expired. Sign in again and retry.";
+    if (error.status === 404) return "The requested item could not be found. Refresh and try again.";
+    if (error.status >= 500) return "The service could not complete that request. Please try again shortly.";
+    return fallback;
+  }
+  if (error instanceof Error && !/traceback|sqlalchemy|sqlite|select\s|insert\s|update\s|delete\s/i.test(error.message)) {
+    return error.message;
+  }
+  return fallback;
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
@@ -136,9 +158,22 @@ export async function apiRequest<T>(
 
   if (clerkTokenGetter) {
     const token = await clerkTokenGetter();
-    if (token) {
-      requestHeaders.Authorization = `Bearer ${token}`;
+    if (!token) {
+      throw new ApiError("Sign in is required to access the API.", {
+        status: 401,
+        statusText: "Unauthorized",
+        detail: { detail: "No Clerk session token is available." },
+        url,
+      });
     }
+    requestHeaders.Authorization = `Bearer ${token}`;
+  } else {
+    throw new ApiError("Authentication is not ready. Please retry shortly.", {
+      status: 401,
+      statusText: "Unauthorized",
+      detail: { detail: "Clerk token provider is not initialized." },
+      url,
+    });
   }
 
   let requestBody: BodyInit | undefined;

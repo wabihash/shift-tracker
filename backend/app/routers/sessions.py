@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.db import get_session
-from app.models import Activity, PlannedShift, SessionLog, UserProfile, VarianceType
+from app.models import Activity, PlannedShift, SessionLog, ShiftRule, UserProfile, VarianceType
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -26,6 +26,7 @@ class SessionLogRead(BaseModel):
     id: int
     clerk_user_id: str
     activity_id: int
+    shift_number: int | None = None
     planned_shift_id: int | None
     actual_start: datetime
     actual_end: datetime
@@ -36,6 +37,7 @@ class SessionLogRead(BaseModel):
     net_minutes: int
     variance_type: VarianceType
     variance_minutes: int
+    break_overrun_minutes: int = 0
     notes: str | None
     logged_date: date
     created_at: datetime
@@ -43,6 +45,7 @@ class SessionLogRead(BaseModel):
 
 class SessionLogCreateBody(BaseModel):
     activity_id: int
+    shift_number: int | None = Field(default=None, ge=1, le=4)
     planned_shift_id: int | None = None
     actual_start: datetime
     actual_end: datetime
@@ -51,6 +54,7 @@ class SessionLogCreateBody(BaseModel):
     gross_minutes: int = Field(ge=0)
     deducted_minutes: int = Field(default=0, ge=0)
     notes: str | None = Field(default=None, max_length=2000)
+    break_overrun_minutes: int = Field(default=0, ge=0)
     logged_date: date
 
     @model_validator(mode="after")
@@ -135,6 +139,18 @@ def create_session(
     clerk_user_id: Annotated[str, Depends(get_current_user)],
 ) -> SessionLog:
     _assert_activity_owned(session, clerk_user_id, body.activity_id)
+    if body.shift_number is not None:
+        shift_rule = session.exec(
+            select(ShiftRule)
+            .join(UserProfile, ShiftRule.profile_id == UserProfile.id)
+            .where(
+                UserProfile.clerk_user_id == clerk_user_id,
+                ShiftRule.shift_number == body.shift_number,
+                ShiftRule.slot_type == "productive",
+            )
+        ).first()
+        if shift_rule is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Shift number is not configured for this day")
     if body.planned_shift_id is not None:
         _assert_planned_shift_owned(
             session, clerk_user_id, body.planned_shift_id, body.activity_id
@@ -151,6 +167,7 @@ def create_session(
     log = SessionLog(
         clerk_user_id=clerk_user_id,
         activity_id=body.activity_id,
+        shift_number=body.shift_number,
         planned_shift_id=body.planned_shift_id,
         actual_start=body.actual_start,
         actual_end=body.actual_end,
@@ -161,6 +178,7 @@ def create_session(
         net_minutes=net_minutes,
         variance_type=variance_type,
         variance_minutes=variance_minutes,
+        break_overrun_minutes=body.break_overrun_minutes,
         notes=body.notes,
         logged_date=body.logged_date,
     )

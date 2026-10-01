@@ -1,7 +1,6 @@
 import { Keyboard, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
-import { useModeStore } from "../../stores/useModeStore";
 import { useTimerStore } from "../../stores/useTimerStore";
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -14,8 +13,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function KeyboardShortcutsModal(): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const previousFocus = useRef<HTMLElement | null>(null);
-  const toggleMode = useModeStore((state) => state.toggleMode);
-
   useEffect(() => {
     if (!isOpen) return;
     previousFocus.current = document.activeElement instanceof HTMLElement
@@ -42,11 +39,6 @@ export function KeyboardShortcutsModal(): ReactElement {
       }
 
       if (event.altKey || event.repeat) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "m") {
-        event.preventDefault();
-        toggleMode();
-        return;
-      }
       if (editable) return;
       if (event.code === "Space" && !event.ctrlKey && !event.metaKey) {
         const timer = useTimerStore.getState();
@@ -62,7 +54,7 @@ export function KeyboardShortcutsModal(): ReactElement {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, toggleMode]);
+  }, [isOpen]);
 
   return (
     <>
@@ -101,7 +93,6 @@ export function KeyboardShortcutsModal(): ReactElement {
             <dl className="space-y-3 text-sm">
               <Shortcut keys={<Key>Space</Key>} description="Start or pause/resume the active stopwatch (outside text fields)." />
               <Shortcut keys={<Key>Esc</Key>} description="Close the open dialog or cancel its form." />
-              <Shortcut keys={<><Modifier /> + <Key>M</Key></>} description="Toggle STANDARD and RUSH shift modes." />
             </dl>
             <p className="mt-5 text-xs text-slate-500">Shortcuts are disabled while typing in text fields.</p>
           </section>
@@ -109,11 +100,6 @@ export function KeyboardShortcutsModal(): ReactElement {
       ) : null}
     </>
   );
-}
-
-function Modifier(): ReactElement {
-  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-  return <kbd className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-xs">{isMac ? "\u2318" : "Ctrl"}</kbd>;
 }
 
 function Key({ children }: { children: string }): ReactElement {

@@ -7,12 +7,16 @@ import { getActivities } from "../../api/activities";
 import { getWeeklyAnalytics } from "../../api/analytics";
 import { getProfile } from "../../api/profile";
 import { getSessions } from "../../api/sessions";
+import { useAuthToken } from "../../auth/AuthTokenContext";
 import type { DateString } from "../../types/schema";
+import { DEFAULT_BED_CUTOFF, DEFAULT_WAKE_TIME } from "../../types/schema";
 import { ActivityBurndownChart } from "../analytics/ActivityBurndownChart";
 import { CapAlertBanner } from "../analytics/CapAlertBanner";
 import { TimeLossLedger } from "../analytics/TimeLossLedger";
+import { HistoricalSummaryTable } from "../analytics/HistoricalSummaryTable";
 import { WeeklyProgressCard } from "../analytics/WeeklyProgressCard";
 import { BurndownChartSkeleton, WeeklyCardSkeleton } from "../common/SkeletonLoaders";
+import { safeErrorMessage } from "../../api/client";
 
 function toDateString(date: Date): DateString {
   return format(date, "yyyy-MM-dd");
@@ -27,28 +31,34 @@ function getDefaultWeekRange(): { start: DateString; end: DateString } {
 }
 
 export function AnalyticsDashboard(): ReactElement {
+  const token = useAuthToken();
   const defaultWeek = useMemo(() => getDefaultWeekRange(), []);
   const [weekStart, setWeekStart] = useState<DateString>(defaultWeek.start);
   const [weekEnd, setWeekEnd] = useState<DateString>(defaultWeek.end);
+  const [view, setView] = useState<"week" | "history">("week");
 
   const profileQuery = useQuery({
     queryKey: ["profile"],
     queryFn: getProfile,
+    enabled: !!token,
   });
 
   const analyticsQuery = useQuery({
     queryKey: ["analytics", weekStart, weekEnd],
     queryFn: () => getWeeklyAnalytics(weekStart, weekEnd),
+    enabled: !!token,
   });
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions", weekStart, weekEnd],
     queryFn: () => getSessions(weekStart, weekEnd),
+    enabled: !!token,
   });
 
   const activitiesQuery = useQuery({
     queryKey: ["activities"],
     queryFn: getActivities,
+    enabled: !!token,
   });
 
   const activityNameById = useMemo(() => {
@@ -83,6 +93,8 @@ export function AnalyticsDashboard(): ReactElement {
     analytics?.weekly_target_goal ??
     profileQuery.data?.weekly_target_hours ??
     68;
+  const sleepActivity = activitiesQuery.data?.find((activity) => activity.name.trim().toLowerCase() === "sleep");
+  const productiveSessions = (sessionsQuery.data ?? []).filter((session) => session.activity_id !== sleepActivity?.id);
 
   return (
     <section className="space-y-4">
@@ -119,13 +131,19 @@ export function AnalyticsDashboard(): ReactElement {
         </div>
       </div>
 
-      {isLoading ? (
+      <div className="flex gap-2 border-b border-slate-800" role="tablist" aria-label="Analytics views">
+        {(["week", "history"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={view === tab} onClick={() => setView(tab)} className={`border-b-2 px-3 py-2 text-sm font-medium capitalize ${view === tab ? "border-indigo-400 text-indigo-200" : "border-transparent text-slate-400 hover:text-slate-200"}`}>{tab === "week" ? "Current Week" : "History"}</button>)}
+      </div>
+
+      {view === "history" ? <HistoricalSummaryTable /> : null}
+
+      {view === "week" && isLoading ? (
         <div className="space-y-4" aria-label="Loading analytics" aria-busy="true">
           <div className="grid gap-4 xl:grid-cols-2"><WeeklyCardSkeleton /><WeeklyCardSkeleton /></div>
           <BurndownChartSkeleton />
           <div className="h-72 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
         </div>
-      ) : hasError ? (
+      ) : view === "week" && hasError ? (
         <div
           role="alert"
           className="flex items-start gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100"
@@ -133,7 +151,7 @@ export function AnalyticsDashboard(): ReactElement {
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="font-semibold">Analytics unavailable</p>
-            <p className="mt-1 text-rose-200/90">{errorMessage}</p>
+            <p className="mt-1 text-rose-200/90">{safeErrorMessage(new Error(errorMessage), "Analytics are temporarily unavailable. Please retry.")}</p>
             <button
               type="button"
               onClick={() => {
@@ -149,7 +167,7 @@ export function AnalyticsDashboard(): ReactElement {
             </button>
           </div>
         </div>
-      ) : (
+      ) : view === "week" ? (
         <>
           <div className="grid gap-4 xl:grid-cols-2">
             <WeeklyProgressCard
@@ -157,9 +175,13 @@ export function AnalyticsDashboard(): ReactElement {
               completedHours={analytics?.total_completed_hours ?? 0}
               overallPercentage={analytics?.overall_percentage ?? 0}
               weekEnd={weekEnd}
-              wakeTime={profileQuery.data?.wake_time ?? "05:41:00"}
-              bedtimeLimit={profileQuery.data?.bedtime_limit ?? "22:15:00"}
-              sessions={sessionsQuery.data ?? []}
+              wakeTime={profileQuery.data?.wake_time ?? DEFAULT_WAKE_TIME}
+              bedCutoff={profileQuery.data?.bed_cutoff ?? DEFAULT_BED_CUTOFF}
+              sessions={productiveSessions}
+              weeklyBuffer={analytics?.weekly_buffer ?? 0}
+              dailyBuffer={analytics?.daily_buffer ?? 0}
+              loggedSleepHours={analytics?.logged_sleep_hours ?? 0}
+              sleepTargetHours={analytics?.metrics.find((metric) => metric.name.trim().toLowerCase() === "sleep")?.target_hours ?? 49}
             />
             <CapAlertBanner
               capAlerts={analytics?.cap_alerts ?? []}
@@ -177,7 +199,7 @@ export function AnalyticsDashboard(): ReactElement {
             activityNameById={activityNameById}
           />
         </>
-      )}
+      ) : null}
     </section>
   );
 }

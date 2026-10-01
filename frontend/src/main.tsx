@@ -5,6 +5,9 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import "./index.css";
+import { registerSW } from "virtual:pwa-register";
+
+registerSW({ immediate: true });
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 

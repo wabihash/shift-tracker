@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timezone
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy.orm import relationship
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -25,12 +26,22 @@ class UserProfile(SQLModel, table=True):
     clerk_user_id: str = Field(index=True, unique=True, max_length=255)
     user_name: Optional[str] = Field(default=None, max_length=255)
     wake_time: time = Field(default=time(5, 41))
-    bedtime_limit: time = Field(default=time(22, 15))
+    bed_cutoff: time = Field(default=time(22, 15))
     weekly_target_hours: float = Field(default=68.0)
+    weekly_break_target_hours: float = Field(default=22.1, nullable=False)
     created_at: datetime = Field(default_factory=_utc_now)
 
-    shift_rules: list[ShiftRule] = Relationship(back_populates="profile")
-    activities: list[Activity] = Relationship(back_populates="profile")
+    @property
+    def bedtime_limit(self) -> time:
+        """Compatibility alias for the persisted bedtime cutoff setting."""
+        return self.bed_cutoff
+
+    shift_rules: list["ShiftRule"] = Relationship(
+        sa_relationship=relationship("ShiftRule", back_populates="profile")
+    )
+    activities: list["Activity"] = Relationship(
+        sa_relationship=relationship("Activity", back_populates="profile")
+    )
 
 
 class ShiftRule(SQLModel, table=True):
@@ -38,16 +49,19 @@ class ShiftRule(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     profile_id: int = Field(foreign_key="user_profiles.id", index=True)
+    day_of_week: int = Field(default=0, ge=0, le=6)
     shift_number: int = Field(ge=1, le=4)
     name: str = Field(max_length=255)
     standard_start: time
     standard_end: time
     standard_break_minutes: int = Field(default=0, ge=0)
-    rush_start: time
-    rush_end: time
-    rush_break_minutes: int = Field(default=0, ge=0)
+    slot_type: str = Field(default="productive", max_length=16)
+    slot_start: Optional[time] = Field(default=None)
+    slot_end: Optional[time] = Field(default=None)
 
-    profile: UserProfile | None = Relationship(back_populates="shift_rules")
+    profile: Optional["UserProfile"] = Relationship(
+        sa_relationship=relationship("UserProfile", back_populates="shift_rules")
+    )
 
 
 class Activity(SQLModel, table=True):
@@ -59,9 +73,15 @@ class Activity(SQLModel, table=True):
     weekly_target_hours: float = Field(default=0.0, ge=0.0)
     color: str = Field(default="#6366f1", max_length=32)
 
-    profile: UserProfile | None = Relationship(back_populates="activities")
-    sessions: list[SessionLog] = Relationship(back_populates="activity")
-    planned_shifts: list[PlannedShift] = Relationship(back_populates="activity")
+    profile: Optional["UserProfile"] = Relationship(
+        sa_relationship=relationship("UserProfile", back_populates="activities")
+    )
+    sessions: list["SessionLog"] = Relationship(
+        sa_relationship=relationship("SessionLog", back_populates="activity")
+    )
+    planned_shifts: list["PlannedShift"] = Relationship(
+        sa_relationship=relationship("PlannedShift", back_populates="activity")
+    )
 
 
 class PlannedShift(SQLModel, table=True):
@@ -75,7 +95,9 @@ class PlannedShift(SQLModel, table=True):
     end_time: datetime
     is_recurring: bool = Field(default=False)
 
-    activity: Activity | None = Relationship(back_populates="planned_shifts")
+    activity: Optional["Activity"] = Relationship(
+        sa_relationship=relationship("Activity", back_populates="planned_shifts")
+    )
 
 
 class SessionLog(SQLModel, table=True):
@@ -84,6 +106,7 @@ class SessionLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     clerk_user_id: str = Field(index=True, max_length=255)
     activity_id: int = Field(foreign_key="activities.id", index=True)
+    shift_number: Optional[int] = Field(default=None, ge=1, le=4, index=True)
     planned_shift_id: Optional[int] = Field(
         default=None, foreign_key="planned_shifts.id", index=True
     )
@@ -96,18 +119,13 @@ class SessionLog(SQLModel, table=True):
     net_minutes: int = Field(ge=0)
     variance_type: VarianceType = Field(default=VarianceType.ON_TIME)
     variance_minutes: int = Field(default=0)
+    break_overrun_minutes: int = Field(default=0, ge=0)
     notes: Optional[str] = Field(default=None, max_length=2000)
     logged_date: date
     created_at: datetime = Field(default_factory=_utc_now)
 
-    activity: Activity | None = Relationship(back_populates="sessions")
+    activity: Optional["Activity"] = Relationship(
+        sa_relationship=relationship("Activity", back_populates="sessions")
+    )
 
 
-class DayOverride(SQLModel, table=True):
-    __tablename__ = "day_overrides"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    clerk_user_id: str = Field(index=True, max_length=255)
-    override_date: date = Field(index=True)
-    mode: str = Field(max_length=64)
-    reason: Optional[str] = Field(default=None, max_length=500)

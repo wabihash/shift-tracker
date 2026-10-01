@@ -1,7 +1,8 @@
-import { Moon, Target, TrendingUp } from "lucide-react";
+import { Moon, Sparkles, Target, TrendingUp } from "lucide-react";
 import { useMemo, type ReactElement } from "react";
 
 import type { DateString, SessionLog, TimeString } from "../../types/schema";
+import { getMilestoneMessage } from "../../config/cadenceMessages";
 
 export interface WeeklyProgressCardProps {
   weeklyTarget: number;
@@ -9,8 +10,12 @@ export interface WeeklyProgressCardProps {
   overallPercentage: number;
   weekEnd: DateString;
   wakeTime: TimeString;
-  bedtimeLimit: TimeString;
+  bedCutoff: TimeString;
   sessions: SessionLog[];
+  weeklyBuffer: number;
+  dailyBuffer: number;
+  loggedSleepHours: number;
+  sleepTargetHours: number;
 }
 
 function parseTimeToMinutes(value: TimeString): number {
@@ -29,14 +34,14 @@ function isInSleepWindow(date: Date, wakeMinutes: number, bedMinutes: number): b
 function computeBedtimeCompliance(
   sessions: SessionLog[],
   wakeTime: TimeString,
-  bedtimeLimit: TimeString,
+  bedCutoff: TimeString,
 ): number {
   if (sessions.length === 0) {
     return 100;
   }
 
   const wakeMinutes = parseTimeToMinutes(wakeTime);
-  const bedMinutes = parseTimeToMinutes(bedtimeLimit);
+  const bedMinutes = parseTimeToMinutes(bedCutoff);
   const compliantCount = sessions.filter((session) => {
     const start = new Date(session.actual_start);
     const end = new Date(session.actual_end);
@@ -63,8 +68,12 @@ export function WeeklyProgressCard({
   overallPercentage,
   weekEnd,
   wakeTime,
-  bedtimeLimit,
+  bedCutoff,
   sessions,
+  weeklyBuffer,
+  dailyBuffer,
+  loggedSleepHours,
+  sleepTargetHours,
 }: WeeklyProgressCardProps): ReactElement {
   const safeTarget = weeklyTarget > 0 ? weeklyTarget : 68;
   const progressRatio = Math.min(1, completedHours / safeTarget);
@@ -73,8 +82,8 @@ export function WeeklyProgressCard({
   const pacePerDay = hoursRemaining / daysRemaining;
 
   const bedtimeCompliance = useMemo(
-    () => computeBedtimeCompliance(sessions, wakeTime, bedtimeLimit),
-    [sessions, wakeTime, bedtimeLimit],
+    () => computeBedtimeCompliance(sessions, wakeTime, bedCutoff),
+    [sessions, wakeTime, bedCutoff],
   );
 
   const defenseLabel =
@@ -83,6 +92,7 @@ export function WeeklyProgressCard({
       : bedtimeCompliance >= 70
         ? "Moderate boundary pressure"
         : "Sleep boundary at risk";
+  const milestone = getMilestoneMessage(overallPercentage);
 
   return (
     <article className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5">
@@ -95,10 +105,15 @@ export function WeeklyProgressCard({
             {completedHours.toFixed(1)}h of {safeTarget.toFixed(1)}h target
           </p>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-200">
-          <Target className="h-3.5 w-3.5" aria-hidden />
-          {overallPercentage.toFixed(1)}% complete
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="inline-flex h-7 items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 text-xs font-semibold text-indigo-200">
+            <Target className="h-3.5 w-3.5" aria-hidden />
+            {overallPercentage.toFixed(1)}% complete
+          </span>
+          <div className="flex h-6 max-w-[min(26rem,65vw)] items-center gap-1 overflow-hidden text-right text-[11px] text-slate-400" title={milestone ?? undefined}>
+            {milestone ? <><Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden /><span className="truncate">{milestone}</span></> : null}
+          </div>
+        </div>
       </div>
 
       <div
@@ -116,6 +131,12 @@ export function WeeklyProgressCard({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 sm:col-span-2">
+          <p className="text-xs uppercase tracking-wide text-violet-200">Your Weekly Buffer</p>
+          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyBuffer.toFixed(1)} hrs</p>
+          <p className="mt-1 text-xs text-slate-400">Daily Average Buffer: {dailyBuffer.toFixed(1)} hrs/day</p>
+          <p className="mt-2 border-t border-violet-500/15 pt-2 text-sm text-violet-100">Sleep: {loggedSleepHours.toFixed(1)} / {sleepTargetHours.toFixed(1)} hrs</p>
+        </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
           <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-wide text-slate-400">
             <TrendingUp className="h-3.5 w-3.5" aria-hidden />

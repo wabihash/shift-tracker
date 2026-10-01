@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Clock3, Loader2, X } from "lucide-react";
+import { Clock3, Loader2, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -10,8 +10,16 @@ import {
 } from "react";
 
 import { getActivities } from "../../api/activities";
-import { recordSession } from "../../api/sessions";
+import { getProfile } from "../../api/profile";
+import { useAuthToken } from "../../auth/AuthTokenContext";
+import { submitOrQueueSession } from "../../services/sessionSubmission";
+import {
+  DEFAULT_BED_CUTOFF,
+  DEFAULT_WAKE_TIME,
+} from "../../types/schema";
 import { useToast } from "../common/ToastProvider";
+import { safeErrorMessage } from "../../api/client";
+import { GuardrailCard } from "../common/GuardrailCard";
 
 interface ManualSessionModalProps {
   isOpen: boolean;
@@ -25,11 +33,7 @@ function localDateValue(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function localTimeValue(date: Date): string {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function combineLocalDateTime(dateValue: string, timeValue: string): Date | null {
+function combineLocalDateTime(dateValue: string, timeValue: string, dayOffset = 0): Date | null {
   const [year, month, day] = dateValue.split("-").map(Number);
   const [hour, minute] = timeValue.split(":").map(Number);
   if ([year, month, day, hour, minute].some((part) => !Number.isInteger(part))) {
@@ -46,6 +50,7 @@ function combineLocalDateTime(dateValue: string, timeValue: string): Date | null
   ) {
     return null;
   }
+  value.setDate(value.getDate() + dayOffset);
   return value;
 }
 
@@ -60,8 +65,9 @@ export function ManualSessionModal({
   isOpen,
   onClose,
 }: ManualSessionModalProps): ReactElement | null {
+  const token = useAuthToken();
   const queryClient = useQueryClient();
-  const { sessionSaved, sleepBoundary } = useToast();
+  const { sessionSaved, sleepBoundary, sleepProtected, notify } = useToast();
   const dialogRef = useRef<HTMLDivElement>(null);
   const activityRef = useRef<HTMLSelectElement>(null);
   const [activityId, setActivityId] = useState("");
@@ -72,11 +78,21 @@ export function ManualSessionModal({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const profileQuery = useQuery({
+    queryKey: ["profile"],
+    queryFn: getProfile,
+    enabled: !!token,
+  });
+  const wakeTime = profileQuery.data?.wake_time ?? DEFAULT_WAKE_TIME;
+  const bedCutoff = profileQuery.data?.bed_cutoff ?? DEFAULT_BED_CUTOFF;
+
   const activitiesQuery = useQuery({
     queryKey: ["activities"],
     queryFn: getActivities,
-    enabled: isOpen,
+    enabled: isOpen && !!token,
   });
+  const selectedActivity = activitiesQuery.data?.find((activity) => activity.id === Number(activityId));
+  const isSleepActivity = selectedActivity?.name.trim().toLowerCase() === "sleep";
 
   const parsedDeduction = deductionInput.trim() === "" ? 0 : Number(deductionInput);
   const deductionIsValid =
@@ -86,21 +102,29 @@ export function ManualSessionModal({
     [loggedDate, startTime],
   );
   const actualEnd = useMemo(
-    () => combineLocalDateTime(loggedDate, endTime),
-    [loggedDate, endTime],
+    () => combineLocalDateTime(loggedDate, endTime, endTime < startTime ? 1 : 0),
+    [loggedDate, endTime, startTime],
   );
   const windowIsValid = actualStart !== null && actualEnd !== null && actualEnd > actualStart;
+  const startMinuteOfDay = actualStart ? actualStart.getHours() * 60 + actualStart.getMinutes() : 0;
+  const endMinuteOfDay = actualEnd ? actualEnd.getHours() * 60 + actualEnd.getMinutes() : 0;
   const grossMinutes = windowIsValid && actualStart && actualEnd
-    ? Math.round((actualEnd.getTime() - actualStart.getTime()) / 60_000)
+    ? endTime < startTime ? 1440 - startMinuteOfDay + endMinuteOfDay : endMinuteOfDay - startMinuteOfDay
     : 0;
   const netMinutes = Math.max(0, grossMinutes - (deductionIsValid ? parsedDeduction : 0));
 
   const crossesSleepBoundary = useMemo(() => {
+    if (isSleepActivity) return false;
     if (!actualStart || !actualEnd || actualEnd <= actualStart) return false;
     const startMinute = actualStart.getHours() * 60 + actualStart.getMinutes();
     const endMinute = actualEnd.getHours() * 60 + actualEnd.getMinutes();
-    return startMinute < 5 * 60 + 41 || endMinute > 22 * 60 + 15;
-  }, [actualEnd, actualStart]);
+    const [wakeHour, wakeMinute] = wakeTime.split(":").map(Number);
+    const [bedHour, bedMinute] = bedCutoff.split(":").map(Number);
+    return (
+      startMinute < wakeHour * 60 + wakeMinute ||
+      endMinute > bedHour * 60 + bedMinute
+    );
+  }, [actualEnd, actualStart, bedCutoff, isSleepActivity, wakeTime]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -161,28 +185,39 @@ export function ManualSessionModal({
       }
       if (notes.length > 2000) throw new Error("Notes must be 2,000 characters or fewer.");
 
-      return recordSession({
-        activity_id: Number(activityId),
-        planned_shift_id: null,
-        actual_start: dateTimeInput(actualStart),
-        actual_end: dateTimeInput(actualEnd),
-        scheduled_start: null,
-        scheduled_end: null,
-        gross_minutes: grossMinutes,
-        deducted_minutes: parsedDeduction,
-        notes: notes.trim() || null,
-        logged_date: loggedDate,
-      });
+      return submitOrQueueSession(
+        {
+          activity_id: Number(activityId),
+          planned_shift_id: null,
+          actual_start: dateTimeInput(actualStart),
+          actual_end: dateTimeInput(actualEnd),
+          scheduled_start: null,
+          scheduled_end: null,
+          gross_minutes: grossMinutes,
+          deducted_minutes: parsedDeduction,
+          notes: notes.trim() || null,
+          logged_date: actualEnd ? localDateValue(actualEnd) : loggedDate,
+        },
+        queryClient,
+        {
+          profile: profileQuery.data,
+          activities: activitiesQuery.data,
+        },
+      );
     },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["analytics"] }),
-        queryClient.invalidateQueries({ queryKey: ["sessions"] }),
-      ]);
-      sessionSaved(netMinutes);
+    onSuccess: (result) => {
+      if (result.isOffline) {
+        notify({
+          type: "info",
+          title: "Offline Session",
+          message: "Saved locally (Offline). Weekly analytics updated.",
+        });
+      } else {
+        sessionSaved(netMinutes);
+      }
       onClose();
     },
-    onError: (mutationError: Error) => setError(mutationError.message),
+    onError: (mutationError: Error) => setError(safeErrorMessage(mutationError, "Could not save session. Review the details and try again.")),
   });
 
   if (!isOpen) return null;
@@ -190,9 +225,15 @@ export function ManualSessionModal({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
-    if (crossesSleepBoundary) {
+    if (crossesSleepBoundary && !isSleepActivity) {
+      sleepProtected();
       const startMinute = actualStart!.getHours() * 60 + actualStart!.getMinutes();
-      sleepBoundary(startMinute < 5 * 60 + 41 ? "wake" : "bedtime", "This past session overlaps the sleep window (10:15 PM–5:41 AM). You can still save it if the time is correct.");
+      const [wakeHour, wakeMinute] = wakeTime.split(":").map(Number);
+      const isBeforeWake = startMinute < wakeHour * 60 + wakeMinute;
+      sleepBoundary(
+        isBeforeWake ? "wake" : "bedtime",
+        `This past session overlaps the sleep window (${bedCutoff}–${wakeTime}). You can still save it if the time is correct.`,
+      );
     }
     saveMutation.mutate();
   };
@@ -265,7 +306,7 @@ export function ManualSessionModal({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block space-y-1.5 sm:col-span-1">
-              <span className="text-sm font-medium text-slate-300">Date</span>
+              <span className="text-sm font-medium text-slate-300">Start date</span>
               <input required type="date" value={loggedDate} onChange={(event) => setLoggedDate(event.target.value)} className={fieldClassName} />
             </label>
             <label className="block space-y-1.5">
@@ -328,13 +369,10 @@ export function ManualSessionModal({
           </label>
 
           {crossesSleepBoundary ? (
-            <div role="status" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <p>This session overlaps the sleep window (10:15 PM–5:41 AM). Check the times; you can still log it.</p>
-            </div>
+            <GuardrailCard tone="sleep" title="Sleep Boundary Conflict" message={`This session overlaps the sleep window (${bedCutoff}-${wakeTime}). Check the times before saving.`} />
           ) : null}
 
-          {error ? <p role="alert" className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p> : null}
+          <div className="min-h-12">{error ? <GuardrailCard tone="critical" title="Could not save session" message={safeErrorMessage(new Error(error), "Review the session details and try again.")} /> : null}</div>
 
           <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
             <button type="button" onClick={onClose} disabled={saveMutation.isPending} className="rounded-md border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-50">Cancel</button>
