@@ -26,14 +26,27 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.com; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https://img.clerk.com https://*.clerk.com https://*.clerk.accounts.dev; font-src 'self' data: https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com https://clerk-telemetry.com https://*.onrender.com https://*.up.railway.app https://*.vercel.app https://*.neon.tech wss://*.clerk.accounts.dev; frame-src https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; worker-src 'self' blob:; upgrade-insecure-requests"
+          "value": "default-src 'self'; base-uri 'self'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.com; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https://img.clerk.com https://images.clerk.dev https://*.clerk.com https://*.clerk.accounts.dev; font-src 'self' data: https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://*.vercel.app https://clerk.shift-tracker-henna.vercel.app; connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.clerk.com https://clerk-telemetry.com https://clerk.shift-tracker-henna.vercel.app https://shift-tracker-api-2dpf.onrender.com https://*.onrender.com https://*.up.railway.app https://*.vercel.app https://*.neon.tech wss://*.clerk.accounts.dev; frame-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; worker-src 'self' blob:; child-src 'self' blob:; upgrade-insecure-requests"
+        }
+      ]
+    },
+    {
+      "source": "/(sw.js|workbox-(.*).js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
         }
       ]
     }
   ],
   "rewrites": [
     {
-      "source": "/((?!assets/).*)",
+      "source": "/((?!assets/|sw.js|workbox-|manifest.webmanifest).*)",
       "destination": "/index.html"
     }
   ]
