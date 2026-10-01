@@ -15,8 +15,9 @@ from app.models import ShiftRule, UserProfile
 router = APIRouter(prefix="/api", tags=["profile"])
 
 DEFAULT_WAKE_TIME = time(5, 41)
-DEFAULT_BEDTIME_LIMIT = time(22, 15)
+DEFAULT_BED_CUTOFF = time(22, 15)
 DEFAULT_WEEKLY_TARGET_HOURS = 68.0
+DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 DEFAULT_SHIFT_RULE_SPECS: tuple[dict[str, object], ...] = (
     {
@@ -25,9 +26,6 @@ DEFAULT_SHIFT_RULE_SPECS: tuple[dict[str, object], ...] = (
         "standard_start": time(6, 0),
         "standard_end": time(14, 0),
         "standard_break_minutes": 30,
-        "rush_start": time(7, 0),
-        "rush_end": time(9, 0),
-        "rush_break_minutes": 15,
     },
     {
         "shift_number": 2,
@@ -35,9 +33,6 @@ DEFAULT_SHIFT_RULE_SPECS: tuple[dict[str, object], ...] = (
         "standard_start": time(14, 0),
         "standard_end": time(22, 0),
         "standard_break_minutes": 30,
-        "rush_start": time(16, 0),
-        "rush_end": time(18, 0),
-        "rush_break_minutes": 15,
     },
     {
         "shift_number": 3,
@@ -45,9 +40,6 @@ DEFAULT_SHIFT_RULE_SPECS: tuple[dict[str, object], ...] = (
         "standard_start": time(10, 0),
         "standard_end": time(18, 0),
         "standard_break_minutes": 30,
-        "rush_start": time(11, 30),
-        "rush_end": time(13, 30),
-        "rush_break_minutes": 15,
     },
     {
         "shift_number": 4,
@@ -55,9 +47,6 @@ DEFAULT_SHIFT_RULE_SPECS: tuple[dict[str, object], ...] = (
         "standard_start": time(8, 0),
         "standard_end": time(16, 0),
         "standard_break_minutes": 30,
-        "rush_start": time(8, 30),
-        "rush_end": time(10, 30),
-        "rush_break_minutes": 15,
     },
 )
 
@@ -68,13 +57,14 @@ class ShiftRuleRead(BaseModel):
     id: int
     profile_id: int
     shift_number: int
+    day_of_week: int = 0
     name: str
     standard_start: time
     standard_end: time
     standard_break_minutes: int
-    rush_start: time
-    rush_end: time
-    rush_break_minutes: int
+    slot_type: str = "productive"
+    slot_start: time | None = None
+    slot_end: time | None = None
 
 
 class ProfileRead(BaseModel):
@@ -84,27 +74,30 @@ class ProfileRead(BaseModel):
     clerk_user_id: str
     user_name: str | None
     wake_time: time
-    bedtime_limit: time
+    bed_cutoff: time
     weekly_target_hours: float
+    weekly_break_target_hours: float = 22.1
     shift_rules: list[ShiftRuleRead]
 
 
 class ProfileUpdateBody(BaseModel):
     wake_time: time
-    bedtime_limit: time
+    bed_cutoff: time
     weekly_target_hours: float = Field(ge=0.0)
+    weekly_break_target_hours: float = Field(gt=0.0, le=168.0)
 
 
 class ShiftRuleUpdateBody(BaseModel):
-    id: int
+    id: int | None = None
     shift_number: int = Field(ge=1, le=4)
+    day_of_week: int = Field(default=0, ge=0, le=6)
     name: str = Field(min_length=1, max_length=255)
     standard_start: time
     standard_end: time
     standard_break_minutes: int = Field(ge=0)
-    rush_start: time
-    rush_end: time
-    rush_break_minutes: int = Field(ge=0)
+    slot_type: str = Field(default="productive", pattern="^(productive|break)$")
+    slot_start: time | None = None
+    slot_end: time | None = None
 
 
 def _load_profile(
@@ -119,8 +112,9 @@ def _load_profile(
 
 
 def _create_default_shift_rules(session: Session, profile_id: int) -> None:
-    for spec in DEFAULT_SHIFT_RULE_SPECS:
-        session.add(ShiftRule(profile_id=profile_id, **spec))
+    for day_of_week in range(7):
+        for spec in DEFAULT_SHIFT_RULE_SPECS:
+            session.add(ShiftRule(profile_id=profile_id, day_of_week=day_of_week, **spec))
 
 
 def get_or_create_profile(session: Session, clerk_user_id: str) -> UserProfile:
@@ -131,8 +125,9 @@ def get_or_create_profile(session: Session, clerk_user_id: str) -> UserProfile:
     profile = UserProfile(
         clerk_user_id=clerk_user_id,
         wake_time=DEFAULT_WAKE_TIME,
-        bedtime_limit=DEFAULT_BEDTIME_LIMIT,
+        bed_cutoff=DEFAULT_BED_CUTOFF,
         weekly_target_hours=DEFAULT_WEEKLY_TARGET_HOURS,
+        weekly_break_target_hours=22.1,
     )
     session.add(profile)
     session.flush()
@@ -165,8 +160,9 @@ def update_profile(
 ) -> UserProfile:
     profile = get_or_create_profile(session, clerk_user_id)
     profile.wake_time = body.wake_time
-    profile.bedtime_limit = body.bedtime_limit
+    profile.bed_cutoff = body.bed_cutoff
     profile.weekly_target_hours = body.weekly_target_hours
+    profile.weekly_break_target_hours = body.weekly_break_target_hours
     session.add(profile)
     session.commit()
     session.refresh(profile)
@@ -179,49 +175,64 @@ def update_shift_rules(
     session: Annotated[Session, Depends(get_session)],
     clerk_user_id: Annotated[str, Depends(get_current_user)],
 ) -> list[ShiftRule]:
-    if len(body) != 4:
+    if len(body) > 224:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Exactly four shift rules are required",
+            detail="At most 224 weekly cadence slots are allowed",
         )
 
-    shift_numbers = {item.shift_number for item in body}
-    if shift_numbers != {1, 2, 3, 4}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Shift rules must include shift_number 1 through 4",
-        )
+    productive_shifts = [(item.day_of_week, item.shift_number) for item in body if item.slot_type == "productive"]
+    if len(set(productive_shifts)) != len(productive_shifts):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Productive shift numbers must be unique per day")
 
     profile = get_or_create_profile(session, clerk_user_id)
     rules_by_id = {rule.id: rule for rule in profile.shift_rules}
-    rules_by_number = {rule.shift_number: rule for rule in profile.shift_rules}
-
     updated: list[ShiftRule] = []
+    retained_ids: set[int] = set()
     for item in body:
-        rule = rules_by_id.get(item.id)
-        if rule is None or rule.profile_id != profile.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Shift rule {item.id} not found for this profile",
-            )
-        if rules_by_number.get(item.shift_number) is not rule:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"shift_number {item.shift_number} does not match rule id",
-            )
-
+        rule = rules_by_id.get(item.id) if item.id and item.id > 0 else None
+        if item.id and item.id > 0 and (rule is None or rule.profile_id != profile.id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Shift rule {item.id} not found for this profile")
+        if rule is None:
+            rule = ShiftRule(profile_id=profile.id, day_of_week=item.day_of_week, shift_number=item.shift_number, name=item.name,
+                standard_start=item.standard_start, standard_end=item.standard_end,
+                standard_break_minutes=item.standard_break_minutes,
+                slot_type=item.slot_type, slot_start=item.slot_start or item.standard_start,
+                slot_end=item.slot_end or item.standard_end)
+            session.add(rule)
+            session.flush()
         rule.name = item.name
+        rule.day_of_week = item.day_of_week
         rule.standard_start = item.standard_start
         rule.standard_end = item.standard_end
         rule.standard_break_minutes = item.standard_break_minutes
-        rule.rush_start = item.rush_start
-        rule.rush_end = item.rush_end
-        rule.rush_break_minutes = item.rush_break_minutes
+        rule.slot_type = item.slot_type
+        rule.slot_start = item.slot_start or item.standard_start
+        rule.slot_end = item.slot_end or item.standard_end
         session.add(rule)
         updated.append(rule)
+        retained_ids.add(rule.id)
+
+    for rule in profile.shift_rules:
+        if rule.id not in retained_ids:
+            session.delete(rule)
 
     session.commit()
     for rule in updated:
         session.refresh(rule)
 
-    return sorted(updated, key=lambda r: r.shift_number)
+    return sorted(updated, key=lambda r: (r.day_of_week, r.shift_number, r.slot_type == "break", r.slot_start or r.standard_start))
+
+
+@router.get("/shift-rules", response_model=dict[str, list[ShiftRuleRead]])
+def get_shift_rules(
+    session: Annotated[Session, Depends(get_session)],
+    clerk_user_id: Annotated[str, Depends(get_current_user)],
+) -> dict[str, list[ShiftRule]]:
+    profile = get_or_create_profile(session, clerk_user_id)
+    grouped: dict[str, list[ShiftRule]] = {day: [] for day in DAY_NAMES}
+    for rule in profile.shift_rules:
+        grouped[DAY_NAMES[rule.day_of_week]].append(rule)
+    for day in DAY_NAMES:
+        grouped[day].sort(key=lambda rule: (rule.shift_number, rule.slot_type == "break", rule.slot_start or rule.standard_start))
+    return grouped

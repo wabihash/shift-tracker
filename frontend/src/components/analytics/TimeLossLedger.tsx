@@ -2,6 +2,7 @@ import { Clock, TimerOff } from "lucide-react";
 import { useMemo, type ReactElement } from "react";
 
 import type { SessionLog } from "../../types/schema";
+import { formatVarianceDuration } from "../../utils/time";
 
 export interface TimeLossLedgerProps {
   totalDeductionMinutes: number;
@@ -30,9 +31,12 @@ export function TimeLossLedger({
   activityNameById,
 }: TimeLossLedgerProps): ReactElement {
   const transitionDelayMinutes = useMemo(() => {
-    return sessions
-      .filter((session) => session.variance_type === "EARLY_EXIT")
-      .reduce((sum, session) => sum + Math.max(0, session.variance_minutes), 0);
+    return sessions.reduce(
+      (sum, session) => sum
+        + (session.variance_type === "EARLY_EXIT" ? Math.max(0, session.variance_minutes) : 0)
+        + session.break_overrun_minutes,
+      0,
+    );
   }, [sessions]);
 
   const totalLostMinutes =
@@ -43,6 +47,7 @@ export function TimeLossLedger({
       .filter(
         (session) =>
           session.deducted_minutes > 0 ||
+          session.break_overrun_minutes > 0 ||
           session.variance_type === "LATE_START" ||
           session.variance_type === "EARLY_EXIT",
       )
@@ -146,9 +151,14 @@ export function TimeLossLedger({
                     {session.deducted_minutes}m
                   </td>
                   <td className="px-3 py-2 text-amber-200">
-                    {session.variance_type.replaceAll("_", " ")}
-                    {session.variance_minutes !== 0
-                      ? ` (${session.variance_minutes}m)`
+                    {session.variance_type === "LATE_START"
+                      ? `Late arrival: ${formatVarianceDuration(session.variance_minutes)} after scheduled`
+                      : session.variance_type.replaceAll("_", " ")}
+                    {session.variance_type !== "LATE_START" && session.variance_minutes !== 0
+                      ? ` (${formatVarianceDuration(Math.abs(session.variance_minutes))})`
+                      : ""}
+                    {session.break_overrun_minutes > 0
+                      ? ` · Break overrun: ${formatVarianceDuration(session.break_overrun_minutes)}`
                       : ""}
                   </td>
                   <td className="max-w-xs truncate px-3 py-2 text-slate-400">

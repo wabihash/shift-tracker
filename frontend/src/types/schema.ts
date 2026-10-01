@@ -4,6 +4,9 @@ export type DateString = string;
 /** ISO-8601 time string (HH:MM:SS) */
 export type TimeString = string;
 
+export const DEFAULT_WAKE_TIME: TimeString = "05:41";
+export const DEFAULT_BED_CUTOFF: TimeString = "22:15";
+
 /** ISO-8601 datetime string */
 export type DateTimeString = string;
 
@@ -18,8 +21,9 @@ export interface UserProfile {
   clerk_user_id: string;
   user_name: string | null;
   wake_time: TimeString;
-  bedtime_limit: TimeString;
+  bed_cutoff: TimeString;
   weekly_target_hours: number;
+  weekly_break_target_hours: number;
   /** Present on persisted records; omitted on some profile API responses. */
   created_at?: DateTimeString;
 }
@@ -28,13 +32,14 @@ export interface ShiftRule {
   id: number;
   profile_id: number;
   shift_number: number;
+  day_of_week: number;
   name: string;
   standard_start: TimeString;
   standard_end: TimeString;
   standard_break_minutes: number;
-  rush_start: TimeString;
-  rush_end: TimeString;
-  rush_break_minutes: number;
+  slot_type: "productive" | "break";
+  slot_start: TimeString | null;
+  slot_end: TimeString | null;
 }
 
 /** GET /api/profile response (includes nested shift rules). */
@@ -64,6 +69,7 @@ export interface SessionLog {
   id: number;
   clerk_user_id: string;
   activity_id: number;
+  shift_number: number | null;
   planned_shift_id: number | null;
   actual_start: DateTimeString;
   actual_end: DateTimeString;
@@ -74,9 +80,11 @@ export interface SessionLog {
   net_minutes: number;
   variance_type: VarianceType;
   variance_minutes: number;
+  break_overrun_minutes: number;
   notes: string | null;
   logged_date: DateString;
   created_at?: DateTimeString;
+  localId?: string;
 }
 
 export interface CapAlert {
@@ -92,6 +100,7 @@ export interface ActivityMetric {
   color: string;
   target_hours: number;
   completed_hours: number;
+  logged_hours?: number;
   deducted_minutes: number;
   remaining_hours: number;
   percentage: number;
@@ -106,24 +115,49 @@ export interface WeeklyAnalyticsResponse {
   metrics: ActivityMetric[];
   total_lost_deductions_min: number;
   total_late_arrival_min: number;
+  weekly_buffer: number;
+  daily_buffer: number;
+  logged_sleep_hours: number;
+}
+
+export interface HistoricalSummaryRow {
+  period_label: string;
+  period_start: DateString;
+  logged_hours: number;
+  target_hours: number;
+  completion_percentage: number;
+  total_deducted_minutes: number;
+  late_arrival_minutes: number;
+  logged_sleep_hours: number;
+  weekly_buffer: number;
+  daily_buffer: number;
+}
+
+export interface HistoricalSummaryResponse {
+  group_by: "week" | "month";
+  rows: HistoricalSummaryRow[];
+  weekly_buffer: number;
+  daily_buffer: number;
 }
 
 export interface ProfileUpdateInput {
   wake_time: TimeString;
-  bedtime_limit: TimeString;
+  bed_cutoff: TimeString;
   weekly_target_hours: number;
+  weekly_break_target_hours: number;
 }
 
 export interface ShiftRuleUpdateInput {
-  id: number;
+  id?: number;
   shift_number: number;
+  day_of_week: number;
   name: string;
   standard_start: TimeString;
   standard_end: TimeString;
   standard_break_minutes: number;
-  rush_start: TimeString;
-  rush_end: TimeString;
-  rush_break_minutes: number;
+  slot_type: "productive" | "break";
+  slot_start: TimeString;
+  slot_end: TimeString;
 }
 
 export interface ActivityCreateInput {
@@ -156,6 +190,7 @@ export interface PlannedShiftUpdateInput {
 
 export interface SessionLogCreateInput {
   activity_id: number;
+  shift_number?: number | null;
   planned_shift_id?: number | null;
   actual_start: DateTimeString;
   actual_end: DateTimeString;
@@ -163,6 +198,7 @@ export interface SessionLogCreateInput {
   scheduled_end?: DateTimeString | null;
   gross_minutes: number;
   deducted_minutes?: number;
+  break_overrun_minutes?: number;
   notes?: string | null;
   logged_date: DateString;
 }

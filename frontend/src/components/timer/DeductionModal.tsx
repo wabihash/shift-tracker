@@ -8,18 +8,27 @@ import {
   type ReactElement,
 } from "react";
 
-import { getPlannedShifts } from "../../api/planner";
-import { recordSession } from "../../api/sessions";
+import { getActivities } from "../../api/activities";
+import { getProfile } from "../../api/profile";
+import { useAuthToken } from "../../auth/AuthTokenContext";
+import { submitOrQueueSession } from "../../services/sessionSubmission";
 import { sessionDeductionSchema } from "../../schemas/forms";
 import { useTimerStore } from "../../stores/useTimerStore";
 import type { DateString } from "../../types/schema";
 import { useToast } from "../common/ToastProvider";
+import { safeErrorMessage } from "../../api/client";
+import { GuardrailCard } from "../common/GuardrailCard";
 
 export interface DeductionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSessionSaved?: () => void;
   activityId: number;
   plannedShiftId: number | null;
+  shiftNumber: number | null;
+  breakOverrunMinutes: number;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
   grossSeconds: number;
   actualStartIso: string;
   actualEndIso: string;
@@ -29,66 +38,58 @@ function toDateString(value: Date): DateString {
   return value.toISOString().slice(0, 10);
 }
 
-function startOfDayIso(date: Date): string {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy.toISOString();
-}
-
-function endOfDayIso(date: Date): string {
-  const copy = new Date(date);
-  copy.setHours(23, 59, 59, 999);
-  return copy.toISOString();
-}
-
 export function DeductionModal({
   isOpen,
   onClose,
+  onSessionSaved,
   activityId,
   plannedShiftId,
+  scheduledStart,
+  scheduledEnd,
+  shiftNumber: _shiftNumber,
+  breakOverrunMinutes,
   grossSeconds,
   actualStartIso,
   actualEndIso,
 }: DeductionModalProps): ReactElement | null {
+  const token = useAuthToken();
   const queryClient = useQueryClient();
   const resetTimer = useTimerStore((state) => state.resetTimer);
-  const { sessionSaved } = useToast();
+  const { sessionSaved, notify } = useToast();
 
-  const grossMinutes = Math.max(1, Math.round(grossSeconds / 60));
-  const [deductedMinutes, setDeductedMinutes] = useState(0);
-  const [notes, setNotes] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const dayRange = useMemo(
-    () => ({
-      start: startOfDayIso(new Date(actualEndIso)),
-      end: endOfDayIso(new Date(actualEndIso)),
-    }),
-    [actualEndIso],
-  );
-
-  const plannedShiftsQuery = useQuery({
-    queryKey: ["planned-shifts", dayRange.start, dayRange.end],
-    queryFn: () => getPlannedShifts(dayRange.start, dayRange.end),
-    enabled: isOpen && plannedShiftId !== null,
+  const profileQuery = useQuery({
+    queryKey: ["profile"],
+    queryFn: getProfile,
+    enabled: isOpen && !!token,
   });
 
-  const linkedPlannedShift = useMemo(() => {
-    if (!plannedShiftId) {
-      return null;
-    }
-    return (plannedShiftsQuery.data ?? []).find(
-      (shift) => shift.id === plannedShiftId,
-    );
-  }, [plannedShiftsQuery.data, plannedShiftId]);
+  const activitiesQuery = useQuery({
+    queryKey: ["activities"],
+    queryFn: getActivities,
+    enabled: isOpen && !!token,
+  });
+
+  const isPastShiftBoundary = !!scheduledEnd && Date.parse(actualEndIso) > Date.parse(scheduledEnd);
+  const [logOvertime, setLogOvertime] = useState(false);
+  const creditedEndIso = isPastShiftBoundary && !logOvertime ? scheduledEnd! : actualEndIso;
+  const creditedSeconds = isPastShiftBoundary && !logOvertime
+    ? Math.max(0, (Date.parse(scheduledEnd!) - Date.parse(actualStartIso)) / 1000)
+    : grossSeconds;
+  const grossMinutes = Math.max(1, Math.floor(creditedSeconds / 60));
+  const [deductedMinutes, setDeductedMinutes] = useState(0);
+  const [deductedMinutesInput, setDeductedMinutesInput] = useState("0");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
     setDeductedMinutes(0);
+    setDeductedMinutesInput("0");
     setNotes("");
     setError(null);
+    setLogOvertime(false);
   }, [isOpen, grossSeconds]);
 
   const netMinutes = useMemo(
@@ -109,30 +110,44 @@ export function DeductionModal({
         throw new Error("Deductions cannot exceed gross minutes");
       }
 
-      return recordSession({
-        activity_id: activityId,
-        planned_shift_id: plannedShiftId,
-        actual_start: actualStartIso,
-        actual_end: actualEndIso,
-        scheduled_start: linkedPlannedShift?.start_time ?? null,
-        scheduled_end: linkedPlannedShift?.end_time ?? null,
-        gross_minutes: grossMinutes,
-        deducted_minutes: parsed.data.deducted_minutes,
-        notes: parsed.data.notes ?? null,
-        logged_date: toDateString(new Date(actualEndIso)),
-      });
+      return submitOrQueueSession(
+        {
+          activity_id: activityId,
+          shift_number: _shiftNumber,
+          planned_shift_id: plannedShiftId,
+          actual_start: actualStartIso,
+          actual_end: creditedEndIso,
+          scheduled_start: scheduledStart,
+          scheduled_end: scheduledEnd,
+          gross_minutes: grossMinutes,
+          deducted_minutes: parsed.data.deducted_minutes,
+          break_overrun_minutes: breakOverrunMinutes,
+          notes: parsed.data.notes ?? null,
+          logged_date: toDateString(new Date(creditedEndIso)),
+        },
+        queryClient,
+        {
+          profile: profileQuery.data,
+          activities: activitiesQuery.data,
+        },
+      );
     },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["analytics"] }),
-        queryClient.invalidateQueries({ queryKey: ["sessions"] }),
-      ]);
+    onSuccess: (result) => {
       resetTimer();
-      sessionSaved(netMinutes);
+      if (result.isOffline) {
+        notify({
+          type: "info",
+          title: "Offline Session",
+          message: "Saved locally (Offline). Weekly analytics updated.",
+        });
+      } else {
+        sessionSaved(netMinutes, 3000);
+      }
+      onSessionSaved?.();
       onClose();
     },
     onError: (mutationError: Error) => {
-      setError(mutationError.message);
+      setError(safeErrorMessage(mutationError, "Could not save session. Review the details and try again."));
     },
   });
 
@@ -185,6 +200,13 @@ export function DeductionModal({
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {isPastShiftBoundary ? <fieldset className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+            <legend className="px-1 text-xs font-semibold text-amber-200">Shift boundary verification</legend>
+            <label className="flex cursor-pointer items-start gap-2 py-1 text-sm text-slate-200"><input type="radio" name="shift-boundary-choice" checked={!logOvertime} onChange={() => setLogOvertime(false)} className="mt-1 accent-emerald-500"/><span>I finished at scheduled time (clamp)</span></label>
+            <label className="flex cursor-pointer items-start gap-2 py-1 text-sm text-slate-200"><input type="radio" name="shift-boundary-choice" checked={logOvertime} onChange={() => setLogOvertime(true)} className="mt-1 accent-amber-500"/><span>I intentionally worked into the break/buffer (log overtime)</span></label>
+          </fieldset> : null}
+
+          {breakOverrunMinutes > 0 ? <p className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">Break overrun recorded: {breakOverrunMinutes} minutes.</p> : null}
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm">
             <div>
               <p className="text-slate-400">Gross Minutes</p>
@@ -203,10 +225,22 @@ export function DeductionModal({
               min={0}
               max={grossMinutes}
               step={1}
-              value={deductedMinutes}
-              onChange={(event) =>
-                setDeductedMinutes(Number(event.target.value))
-              }
+              value={deductedMinutesInput}
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDeductedMinutesInput(raw);
+                if (raw === "") { setDeductedMinutes(0); return; }
+                const parsed = Number(raw);
+                if (Number.isFinite(parsed)) setDeductedMinutes(parsed);
+              }}
+              onBlur={() => {
+                const parsed = Number(deductedMinutesInput);
+                const normalized = deductedMinutesInput.trim() === "" || !Number.isFinite(parsed) || parsed < 0
+                  ? "0"
+                  : String(Math.min(parsed, grossMinutes));
+                setDeductedMinutesInput(normalized);
+                setDeductedMinutes(Number(normalized));
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none focus:border-indigo-500"
             />
           </label>
@@ -222,11 +256,7 @@ export function DeductionModal({
             />
           </label>
 
-          {error ? (
-            <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-              {error}
-            </p>
-          ) : null}
+          <div className="min-h-16">{error ? <GuardrailCard tone="critical" title="Could not save session" message={safeErrorMessage(new Error(error), "Review the deductions and try again.")} /> : null}</div>
 
           <button
             type="submit"

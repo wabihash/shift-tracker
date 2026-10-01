@@ -10,6 +10,10 @@ export function getProfile(): Promise<UserProfileDetail> {
   return apiRequest<UserProfileDetail>("/api/profile");
 }
 
+export function getShiftRules(): Promise<Record<string, ShiftRule[]>> {
+  return apiRequest<Record<string, ShiftRule[]>>("/api/shift-rules");
+}
+
 export function updateProfile(data: ProfileUpdateInput): Promise<UserProfileDetail> {
   return apiRequest<UserProfileDetail>("/api/profile", {
     method: "PUT",

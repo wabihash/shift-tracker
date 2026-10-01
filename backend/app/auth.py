@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Annotated
 
@@ -11,6 +12,8 @@ from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_CLERK_ISSUER = ""
 
@@ -59,9 +62,14 @@ async def get_current_user(
             signing_key.key,
             algorithms=["RS256"],
             issuer=CLERK_ISSUER,
+            leeway=30,
             options={"require": ["sub", "exp", "iss"]},
         )
     except PyJWTError as exc:
+        # Never log the bearer token. The exception category is enough to
+        # distinguish expiration, issuer/audience mismatch, signature, and JWKS
+        # failures when diagnosing Clerk configuration.
+        logger.warning("Clerk token validation failed (%s)", type(exc).__name__)
         raise _unauthorized("Invalid or expired token") from exc
 
     clerk_user_id = payload.get("sub")

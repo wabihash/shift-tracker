@@ -3,6 +3,7 @@ import type {
   ActivityMetric,
   CapAlert,
   DateString,
+  HistoricalSummaryResponse,
   WeeklyAnalyticsResponse,
 } from "../types/schema";
 
@@ -32,6 +33,16 @@ interface WeeklyAnalyticsWire {
     total_lost_deductions_min: number;
     total_late_arrival_min: number;
   };
+  weekly_buffer: number;
+  daily_buffer: number;
+  logged_sleep_hours: number;
+}
+
+export async function getHistorySummary(groupBy: "week" | "month"): Promise<HistoricalSummaryResponse> {
+  return apiRequest<HistoricalSummaryResponse>(
+    "/api/analytics/history-summary",
+    { query: { group_by: groupBy } },
+  );
 }
 
 function mapWeeklyAnalytics(wire: WeeklyAnalyticsWire): WeeklyAnalyticsResponse {
@@ -67,6 +78,9 @@ function mapWeeklyAnalytics(wire: WeeklyAnalyticsWire): WeeklyAnalyticsResponse 
     metrics,
     total_lost_deductions_min: wire.lost_minutes.total_lost_deductions_min,
     total_late_arrival_min: wire.lost_minutes.total_late_arrival_min,
+    weekly_buffer: wire.weekly_buffer,
+    daily_buffer: wire.daily_buffer,
+    logged_sleep_hours: wire.logged_sleep_hours,
   };
 }
 
