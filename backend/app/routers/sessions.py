@@ -17,7 +17,7 @@ VARIANCE_THRESHOLD = timedelta(minutes=5)
 
 
 def compute_net_minutes(gross_minutes: int, deducted_minutes: int) -> int:
-    return gross_minutes - deducted_minutes
+    return max(0, gross_minutes - deducted_minutes)
 
 
 class SessionLogRead(BaseModel):
