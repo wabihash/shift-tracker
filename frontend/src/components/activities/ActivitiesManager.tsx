@@ -10,6 +10,7 @@ import {
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import type { Activity, ActivityCreateInput } from "../../types/schema";
 import { safeErrorMessage } from "../../api/client";
+import { ConfirmModal } from "../common/ConfirmModal";
 import { GuardrailCard } from "../common/GuardrailCard";
 
 const inputClass =
@@ -41,6 +42,7 @@ export function ActivitiesManager(): ReactElement {
     color: "#6366f1",
   });
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [pendingDeletion, setPendingDeletion] = useState<Activity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftTargetInput, setDraftTargetInput] = useState("");
   const [editingTargetInput, setEditingTargetInput] = useState("");
@@ -63,6 +65,11 @@ export function ActivitiesManager(): ReactElement {
     mutationFn: deleteActivity,
     onSuccess: refresh,
   });
+
+  const confirmDelete = () => {
+    if (pendingDeletion) deleteMutation.mutate(pendingDeletion.id);
+    setPendingDeletion(null);
+  };
 
   const handleDurationInput = (raw: string, setValue: (value: string) => void) => {
     if (raw.startsWith("-")) {
@@ -179,7 +186,7 @@ export function ActivitiesManager(): ReactElement {
                 <span className="min-w-40 flex-1 font-medium text-slate-200">{activity.name}</span>
                 <span className="text-sm text-slate-400">{activity.weekly_target_hours} target hours</span>
                 <button type="button" onClick={() => { setEditingId(activity.id); setEditingTargetInput(String(activity.weekly_target_hours)); setError(null); }} className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800">Edit</button>
-                <button type="button" onClick={() => { if (window.confirm(`Delete “${activity.name}”? Its sessions and planned shifts will also be deleted.`)) deleteMutation.mutate(activity.id); }} disabled={deleteMutation.isPending} className="rounded-md border border-rose-500/40 px-3 py-1.5 text-sm text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">Delete</button>
+                <button type="button" onClick={() => setPendingDeletion(activity)} disabled={deleteMutation.isPending} className="rounded-md border border-rose-500/40 px-3 py-1.5 text-sm text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">Delete</button>
               </div>
             )}
           </li>
@@ -188,6 +195,19 @@ export function ActivitiesManager(): ReactElement {
       {!activitiesQuery.isLoading && activitiesQuery.data?.length === 0 ? (
         <p className="text-sm text-slate-400">No activities yet. Add one above to get started.</p>
       ) : null}
+
+      <ConfirmModal
+        isOpen={pendingDeletion !== null}
+        title="Delete activity?"
+        message={pendingDeletion
+          ? `Delete “${pendingDeletion.name}”? Its sessions and planned shifts will also be deleted.`
+          : "This activity and its related records will be deleted."}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive
+        onConfirm={confirmDelete}
+        onClose={() => setPendingDeletion(null)}
+      />
     </section>
   );
 }
