@@ -1,4 +1,4 @@
-import { Keyboard, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
 import { useTimerStore } from "../../stores/useTimerStore";
@@ -40,6 +40,11 @@ export function KeyboardShortcutsModal(): ReactElement {
 
       if (event.altKey || event.repeat) return;
       if (editable) return;
+      if (event.key === "?") {
+        event.preventDefault();
+        setIsOpen(true);
+        return;
+      }
       if (event.code === "Space" && !event.ctrlKey && !event.metaKey) {
         const timer = useTimerStore.getState();
         if (timer.status === "running") {
@@ -58,17 +63,6 @@ export function KeyboardShortcutsModal(): ReactElement {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 transition hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400"
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        aria-label="Show keyboard shortcuts"
-      >
-        <Keyboard className="h-4 w-4" aria-hidden="true" />
-        <span className="hidden sm:inline">Shortcuts</span>
-      </button>
       {isOpen ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}>
           <section
