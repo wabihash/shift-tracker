@@ -13,6 +13,8 @@ export default defineConfig({
       manifest: {
         name: "Shift Tracker",
         short_name: "ShiftTracker",
+        id: "/",
+        scope: "/",
         start_url: "/",
         theme_color: "#0f172a",
         background_color: "#0f172a",
@@ -29,7 +31,13 @@ export default defineConfig({
             src: "/pwa-512x512.png",
             sizes: "512x512",
             type: "image/png",
-            purpose: "any maskable",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
           },
         ],
       },
