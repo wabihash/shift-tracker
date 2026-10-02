@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Clock3, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { getProfile, getShiftRules, updateShiftRules } from "../../api/profile";
 import { safeErrorMessage } from "../../api/client";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import { GuardrailCard } from "../common/GuardrailCard";
+import { useClickOutside } from "../../hooks/useClickOutside";
 import type { ShiftRule, ShiftRuleUpdateInput, UserProfileDetail } from "../../types/schema";
 
 type SlotDraft = { id: number; day_of_week: number; name: string; start: string; end: string; kind: "productive" | "break" };
@@ -31,6 +32,8 @@ function updatePayload(slot: SlotDraft, shiftNumber: number): ShiftRuleUpdateInp
 }
 
 export function ShiftRulesEditor({ open, onClose }: { open: boolean; onClose: () => void }): ReactElement | null {
+  const dialogRef = useRef<HTMLElement>(null);
+  useClickOutside([dialogRef], onClose, { enabled: open });
   const token = useAuthToken();
   const client = useQueryClient();
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile, enabled: !!token });
@@ -86,8 +89,8 @@ export function ShiftRulesEditor({ open, onClose }: { open: boolean; onClose: ()
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="shift-editor-title" className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm sm:p-6" role="presentation">
+      <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="shift-editor-title" className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
         <header className="flex items-start justify-between border-b border-slate-800 p-5 sm:p-6">
           <div><div className="flex items-center gap-2 text-indigo-300"><Clock3 className="h-4 w-4"/><span className="text-xs font-semibold uppercase tracking-wider">Weekly cadence</span></div><h2 id="shift-editor-title" className="mt-1 text-xl font-semibold text-white">My Shifts &amp; Breaks</h2><p className="mt-1 text-sm text-slate-400">Set shift and break times separately for each day.</p></div>
           <button type="button" onClick={onClose} aria-label="Close shift configuration" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-5 w-5"/></button>

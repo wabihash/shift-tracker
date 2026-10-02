@@ -2,6 +2,7 @@ import { Keyboard, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
 import { useTimerStore } from "../../stores/useTimerStore";
+import { useClickOutside } from "../../hooks/useClickOutside";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -27,6 +28,9 @@ async function hardReload(): Promise<void> {
 export function KeyboardShortcutsModal(): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const previousFocus = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useClickOutside([triggerRef, dialogRef], () => setIsOpen(false), { enabled: isOpen });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,8 +94,9 @@ export function KeyboardShortcutsModal(): ReactElement {
     <>
       <div className="group relative">
         <button
+          ref={triggerRef}
           type="button"
-          onClick={() => setIsOpen(true)}
+          onClick={() => setIsOpen((open) => !open)}
           aria-label="Shortcuts & Quick Actions"
           aria-expanded={isOpen}
           aria-haspopup="dialog"
@@ -108,9 +113,9 @@ export function KeyboardShortcutsModal(): ReactElement {
       {isOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
-          onMouseDown={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}
         >
           <section
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="shortcuts-title"

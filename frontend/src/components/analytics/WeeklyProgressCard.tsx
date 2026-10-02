@@ -1,7 +1,7 @@
 import { Sparkles, Target, TrendingUp } from "lucide-react";
 import type { ReactElement } from "react";
 
-import type { DateString, SessionLog } from "../../types/schema";
+import type { DateString } from "../../types/schema";
 import { getAppNow } from "../../utils/serverClock";
 import { getMilestoneMessage } from "../../config/cadenceMessages";
 
@@ -10,7 +10,6 @@ export interface WeeklyProgressCardProps {
   completedHours: number;
   overallPercentage: number;
   weekEnd: DateString;
-  sessions: SessionLog[];
   weeklyBuffer: number;
   dailyBuffer: number;
   hasTrackedSessions?: boolean;
@@ -33,7 +32,6 @@ export function WeeklyProgressCard({
   completedHours,
   overallPercentage,
   weekEnd,
-  sessions,
   weeklyBuffer,
   dailyBuffer,
   hasTrackedSessions = true,

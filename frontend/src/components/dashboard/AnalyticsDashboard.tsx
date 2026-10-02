@@ -182,7 +182,6 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
               completedHours={completedHours}
               overallPercentage={overallPercentage}
               weekEnd={weekEnd}
-              sessions={trackedSessions}
               weeklyBuffer={analytics?.weekly_buffer ?? 0}
               dailyBuffer={analytics?.daily_buffer ?? 0}
               plannedSleep={(() => { const sleep = activitiesQuery.data?.find((a) => a.name.trim().toLowerCase() === "sleep"); return sleep && sleep.weekly_target_hours > 0 ? sleep.weekly_target_hours : 56; })()}

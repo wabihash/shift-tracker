@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ClockPlus, Pause, Play, Square } from "lucide-react";
 import {
   useCallback,
@@ -10,7 +10,6 @@ import {
 
 import { getActivities } from "../../api/activities";
 import { getProfile } from "../../api/profile";
-import { submitOrQueueSession } from "../../services/sessionSubmission";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import { useShiftEngine } from "../../hooks/useShiftEngine";
 import { useToast } from "../common/ToastProvider";
@@ -57,8 +56,7 @@ export function LiveStopwatch({
   manualSessionRequest = 0,
 }: LiveStopwatchProps): ReactElement {
   const token = useAuthToken();
-  const queryClient = useQueryClient();
-  const { notify, sessionSaved } = useToast();
+  const { notify } = useToast();
   const status = useTimerStore((state) => state.status);
   const activeActivityId = useTimerStore((state) => state.activeActivityId);
   const timerKind = useTimerStore((state) => state.timerKind);
@@ -154,7 +152,7 @@ export function LiveStopwatch({
           : "Select a shift window in Configure Shifts to enable starting the stopwatch.",
       });
     }
-  }, [canStart, handleStart, notify, startRequest, status]);
+  }, [canStart, handleStart, notify, selectedActivityId, startRequest, status]);
 
   useEffect(() => {
     if (previousManualRequest.current === manualSessionRequest) return;
@@ -195,7 +193,7 @@ export function LiveStopwatch({
       breakOverrunMinutes: state.breakOverrunMinutes,
     });
     setDeductionOpen(true);
-  }, [activeActivityId, selectedActivityId, stopTimer]);
+  }, [activeActivityId, resetTimer, selectedActivityId, stopTimer]);
 
   const handleDiscard = () => {
     resetTimer();

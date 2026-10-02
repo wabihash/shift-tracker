@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
   type FormEvent,
   type ReactElement,
 } from "react";
@@ -18,6 +19,7 @@ import { useToast } from "../common/ToastProvider";
 import { safeErrorMessage } from "../../api/client";
 import { GuardrailCard } from "../common/GuardrailCard";
 import { getClientTimezone, getLocalDateString } from "../../utils/serverClock";
+import { useClickOutside } from "../../hooks/useClickOutside";
 
 export interface DeductionModalProps {
   isOpen: boolean;
@@ -51,6 +53,8 @@ export function DeductionModal({
   const token = useAuthToken();
   const queryClient = useQueryClient();
   const resetTimer = useTimerStore((state) => state.resetTimer);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useClickOutside([dialogRef], onClose, { enabled: isOpen, closeOnEscape: false });
   const { sessionSaved, notify } = useToast();
 
   const profileQuery = useQuery({
@@ -168,6 +172,7 @@ export function DeductionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="deduction-modal-title"

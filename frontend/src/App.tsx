@@ -17,6 +17,7 @@ import { ToastProvider } from "./components/common/ToastProvider";
 import { getCadenceMessage } from "./config/cadenceMessages";
 import { InstallPwaButton } from "./components/InstallPwaButton";
 import { getAppNow, syncServerClock } from "./utils/serverClock";
+import { useClickOutside } from "./hooks/useClickOutside";
 
 function AuthScreen(): ReactElement {
   const { login, register } = useAuth();
@@ -37,7 +38,10 @@ function AuthScreen(): ReactElement {
 function UserMenu(): ReactElement {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  return <div className="relative"><button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-100">{user?.email.slice(0, 1).toUpperCase()}</button>{open ? <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-xl"><p className="truncate text-xs text-slate-300">{user?.email}</p><button type="button" onClick={logout} className="mt-3 w-full rounded-md px-3 py-2 text-left text-sm text-rose-200 hover:bg-slate-800">Log Out</button></div> : null}</div>;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useClickOutside([triggerRef, menuRef], () => setOpen(false), { enabled: open });
+  return <div className="relative"><button ref={triggerRef} type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label="Profile menu" className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-100">{user?.email.slice(0, 1).toUpperCase()}</button>{open ? <div ref={menuRef} role="menu" className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-xl"><p className="truncate text-xs text-slate-300">{user?.email}</p><button type="button" role="menuitem" onClick={logout} className="mt-3 w-full rounded-md px-3 py-2 text-left text-sm text-rose-200 hover:bg-slate-800">Log Out</button></div> : null}</div>;
 }
 function LiveClock(): ReactElement {
   const [now, setNow] = useState(getAppNow);

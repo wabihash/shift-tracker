@@ -157,13 +157,7 @@ export async function apiRequest<T>(
     requestBody = JSON.stringify(body);
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, { method, headers: requestHeaders, body: requestBody, signal });
-  } catch (error) {
-    // Preserve cached/offline state and let callers decide whether to queue writes.
-    throw error;
-  }
+  const response = await fetch(url, { method, headers: requestHeaders, body: requestBody, signal });
 
   if (response.status === 204) {
     return undefined as T;
