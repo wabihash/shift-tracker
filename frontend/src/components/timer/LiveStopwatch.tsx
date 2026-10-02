@@ -94,6 +94,13 @@ export function LiveStopwatch({
   const shiftEngine = useShiftEngine(profileQuery.data?.shift_rules ?? [], status, timerKind);
 
   useEffect(() => {
+    const restored = useTimerStore.getState();
+    if (restored.status === "idle" || (restored.status === "running" && !restored.utcStartAnchor)) {
+      resetTimer();
+    }
+  }, [resetTimer]);
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => tick(), 1000);
     return () => window.clearInterval(intervalId);
   }, [tick]);
@@ -190,6 +197,12 @@ export function LiveStopwatch({
     setDeductionOpen(true);
   };
 
+  const handleDiscard = () => {
+    resetTimer();
+    setDeductionOpen(false);
+    setSessionCapture(null);
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
@@ -224,12 +237,24 @@ export function LiveStopwatch({
         <p className="font-mono text-5xl font-bold tracking-wider text-slate-50 sm:text-6xl">
           {formatElapsed(displayedSeconds)}
         </p>
-        <div className="mx-auto mt-1 flex h-5 max-w-full items-center justify-center overflow-hidden">
-          <span className="inline-block max-w-full truncate rounded border border-slate-700/70 bg-slate-900/50 px-2 py-0.5 font-mono text-[10px] text-slate-400" title={getCadenceMessage()}>
-            {timerKind === "work" && status === "running" ? getRunningFocusCue(Math.floor(elapsedSeconds / 5) % 4) : getCadenceMessage()}
-          </span>
+        <div className="mx-auto mt-1 flex h-7 items-center justify-center gap-[3px]" role="img" aria-label={status === "running" ? "Focus timer wave visualizer" : status === "paused" ? "Paused timer visualizer" : "Timer resting"}>
+          {status !== "running" ? (
+            <span className="h-px w-32 rounded-full bg-slate-700" aria-hidden="true" />
+          ) : Array.from({ length: 25 }, (_, index) => (
+            <span
+              key={index}
+              className="focus-wave-bar h-5 w-1 rounded-full bg-gradient-to-t from-emerald-500/70 to-cyan-300"
+              aria-hidden="true"
+            />
+          ))}
         </div>
-        <p className="mt-2 text-xs capitalize text-slate-400">{status}</p>
+        <p className={`mt-1 h-5 truncate text-xs leading-5 ${status === "running" ? "text-emerald-300" : "text-slate-400"}`}>
+          {status === "running" && timerKind === "work"
+            ? `Focus mode active · ${getRunningFocusCue(Math.floor(elapsedSeconds / 5) % 4)}`
+            : status === "running"
+              ? "Break in progress · Take a moment to reset"
+              : `${status === "paused" ? "Paused" : "Idle"} · ${getCadenceMessage()}`}
+        </p>
           <p className="mt-1 text-xs text-slate-500">{runningShiftNumber ? `Shift ${runningShiftNumber}` : "No active shift"}</p>
       </div>
 
@@ -273,6 +298,15 @@ export function LiveStopwatch({
           <Square className="h-4 w-4" />
           {timerKind === "break" ? "End Break" : "Stop"}
         </button>
+        {status !== "running" ? (
+          <button
+            type="button"
+            onClick={handleDiscard}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:border-rose-500/60 hover:bg-slate-800 hover:text-rose-200"
+          >
+            Reset / Discard
+          </button>
+        ) : null}
       </div>
 
       <button
@@ -296,10 +330,7 @@ export function LiveStopwatch({
             setAccentGlow(true);
             window.setTimeout(() => setAccentGlow(false), 2500);
           }}
-          onClose={() => {
-            setDeductionOpen(false);
-            setSessionCapture(null);
-          }}
+          onClose={handleDiscard}
           activityId={sessionCapture.activityId}
           plannedShiftId={sessionCapture.plannedShiftId}
           scheduledStart={sessionCapture.scheduledStart}
