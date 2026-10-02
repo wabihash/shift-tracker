@@ -16,7 +16,11 @@ load_dotenv()
 def _parse_cors_origins(raw: str) -> list[str]:
     value = raw.strip()
     if not value or value == "*":
-        return ["*"]
+        return [
+            "https://shift-tracker-henna.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:3000",
+        ]
     return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
@@ -27,7 +31,8 @@ app.add_middleware(MonitoringMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_parse_cors_origins(os.getenv("CORS_ORIGINS", "*")),
+    allow_origins=_parse_cors_origins(os.getenv("CORS_ORIGINS", "")),
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
