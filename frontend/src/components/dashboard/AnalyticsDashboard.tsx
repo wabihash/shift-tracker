@@ -35,6 +35,7 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
   const [now, setNow] = useState(getAppNow);
   const [weekStart, setWeekStart] = useState<DateString>(() => toDateString(startOfWeek(getAppNow(), { weekStartsOn: weekStartDay })));
   const [followCurrentPeriod, setFollowCurrentPeriod] = useState(true);
+  const [weekStartError, setWeekStartError] = useState(false);
   const userChangedAnchor = useRef(false);
   const [view, setView] = useState<"week" | "history">("week");
 
@@ -127,7 +128,14 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
   const handleWeekStartChange = (value: DateString) => {
     if (!value) return;
     const selectedStart = parseISO(value);
+    if (Number.isNaN(selectedStart.getTime()) || value < currentPeriodStart) {
+      setWeekStartError(true);
+      setWeekStart(currentPeriodStart);
+      setFollowCurrentPeriod(true);
+      return;
+    }
     const selectedDay = selectedStart.getDay() as WeekStartDay;
+    setWeekStartError(false);
     userChangedAnchor.current = true;
     setWeekStart(value);
     setWeekStartDay(selectedDay);
@@ -153,14 +161,17 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
 
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 p-2">
           <CalendarRange className="h-4 w-4 text-slate-400" aria-hidden />
-          <label className="text-xs text-slate-400">
+          <label className="flex flex-col text-xs text-slate-400">
             Week start
             <input
               type="date"
               value={weekStart}
+              min={currentPeriodStart}
+              aria-invalid={weekStartError}
               onChange={(event) => handleWeekStartChange(event.target.value)}
-              className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100"
+              className={`mt-1 rounded border bg-slate-950 px-2 py-1 text-sm text-slate-100 ${weekStartError ? "border-amber-500" : "border-slate-700"}`}
             />
+            {weekStartError ? <span role="alert" className="mt-1 max-w-60 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] leading-snug text-amber-200">⚠️ Week start cannot be set in the past. Please select today or an upcoming start day.</span> : null}
           </label>
           <label className="text-xs text-slate-400">
             Week end
