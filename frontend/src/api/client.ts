@@ -22,14 +22,6 @@ export class ApiError extends Error {
   }
 }
 
-type TokenGetter = () => Promise<string | null>;
-
-let clerkTokenGetter: TokenGetter | null = null;
-
-export function setClerkTokenGetter(fn: TokenGetter): void {
-  clerkTokenGetter = fn;
-}
-
 const DEFAULT_BASE_URL = "http://localhost:8000";
 
 export function getApiBaseUrl(): string {
@@ -156,25 +148,8 @@ export async function apiRequest<T>(
     ...headers,
   };
 
-  if (clerkTokenGetter) {
-    const token = await clerkTokenGetter();
-    if (!token) {
-      throw new ApiError("Sign in is required to access the API.", {
-        status: 401,
-        statusText: "Unauthorized",
-        detail: { detail: "No Clerk session token is available." },
-        url,
-      });
-    }
-    requestHeaders.Authorization = `Bearer ${token}`;
-  } else {
-    throw new ApiError("Authentication is not ready. Please retry shortly.", {
-      status: 401,
-      statusText: "Unauthorized",
-      detail: { detail: "Clerk token provider is not initialized." },
-      url,
-    });
-  }
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("access_token") : null;
+  if (token) requestHeaders.Authorization = `Bearer ${token}`;
 
   let requestBody: BodyInit | undefined;
   if (body !== undefined) {
@@ -182,12 +157,13 @@ export async function apiRequest<T>(
     requestBody = JSON.stringify(body);
   }
 
-  const response = await fetch(url, {
-    method,
-    headers: requestHeaders,
-    body: requestBody,
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, { method, headers: requestHeaders, body: requestBody, signal });
+  } catch (error) {
+    // Preserve cached/offline state and let callers decide whether to queue writes.
+    throw error;
+  }
 
   if (response.status === 204) {
     return undefined as T;

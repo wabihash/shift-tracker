@@ -18,7 +18,7 @@ class PlannedShiftRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    clerk_user_id: str
+    user_id: int
     activity_id: int
     title: str
     start_time: datetime
@@ -56,10 +56,10 @@ class PlannedShiftUpdateBody(BaseModel):
 
 
 def _get_owned_planned_shift(
-    session: Session, clerk_user_id: str, planned_shift_id: int
+    session: Session, user_id: int, planned_shift_id: int
 ) -> PlannedShift:
     shift = session.get(PlannedShift, planned_shift_id)
-    if shift is None or shift.clerk_user_id != clerk_user_id:
+    if shift is None or shift.user_id != user_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Planned shift not found",
@@ -68,14 +68,14 @@ def _get_owned_planned_shift(
 
 
 def _assert_activity_owned(
-    session: Session, clerk_user_id: str, activity_id: int
+    session: Session, user_id: int, activity_id: int
 ) -> Activity:
     statement = (
         select(Activity)
         .join(UserProfile, Activity.profile_id == UserProfile.id)
         .where(
             Activity.id == activity_id,
-            UserProfile.clerk_user_id == clerk_user_id,
+            UserProfile.user_id == user_id,
         )
     )
     activity = session.exec(statement).first()
@@ -90,7 +90,7 @@ def _assert_activity_owned(
 @router.get("/planned-shifts", response_model=list[PlannedShiftRead])
 def list_planned_shifts(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
     start: Annotated[datetime, Query(description="Range start (inclusive)")],
     end: Annotated[datetime, Query(description="Range end (inclusive)")],
 ) -> list[PlannedShift]:
@@ -103,7 +103,7 @@ def list_planned_shifts(
     statement = (
         select(PlannedShift)
         .where(
-            PlannedShift.clerk_user_id == clerk_user_id,
+            PlannedShift.user_id == user_id,
             PlannedShift.start_time >= start,
             PlannedShift.end_time <= end,
         )
@@ -120,12 +120,12 @@ def list_planned_shifts(
 def create_planned_shift(
     body: PlannedShiftCreateBody,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> PlannedShift:
-    _assert_activity_owned(session, clerk_user_id, body.activity_id)
+    _assert_activity_owned(session, user_id, body.activity_id)
 
     shift = PlannedShift(
-        clerk_user_id=clerk_user_id,
+        user_id=user_id,
         activity_id=body.activity_id,
         title=body.title.strip(),
         start_time=body.start_time,
@@ -143,7 +143,7 @@ def update_planned_shift(
     planned_shift_id: int,
     body: PlannedShiftUpdateBody,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> PlannedShift:
     if (
         body.title is None
@@ -157,7 +157,7 @@ def update_planned_shift(
             detail="At least one field must be provided",
         )
 
-    shift = _get_owned_planned_shift(session, clerk_user_id, planned_shift_id)
+    shift = _get_owned_planned_shift(session, user_id, planned_shift_id)
 
     next_start = body.start_time if body.start_time is not None else shift.start_time
     next_end = body.end_time if body.end_time is not None else shift.end_time
@@ -168,7 +168,7 @@ def update_planned_shift(
         )
 
     if body.activity_id is not None:
-        _assert_activity_owned(session, clerk_user_id, body.activity_id)
+        _assert_activity_owned(session, user_id, body.activity_id)
         shift.activity_id = body.activity_id
     if body.title is not None:
         shift.title = body.title.strip()
@@ -189,8 +189,8 @@ def update_planned_shift(
 def delete_planned_shift(
     planned_shift_id: int,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> None:
-    shift = _get_owned_planned_shift(session, clerk_user_id, planned_shift_id)
+    shift = _get_owned_planned_shift(session, user_id, planned_shift_id)
     session.delete(shift)
     session.commit()

@@ -1,7 +1,7 @@
 import { Sparkles, Target, TrendingUp } from "lucide-react";
 import type { ReactElement } from "react";
 
-import type { DateString, SessionLog, TimeString } from "../../types/schema";
+import type { DateString, SessionLog } from "../../types/schema";
 import { getMilestoneMessage } from "../../config/cadenceMessages";
 
 export interface WeeklyProgressCardProps {
@@ -9,15 +9,10 @@ export interface WeeklyProgressCardProps {
   completedHours: number;
   overallPercentage: number;
   weekEnd: DateString;
-  wakeTime?: TimeString;
-  bedCutoff?: TimeString;
   sessions: SessionLog[];
   weeklyBuffer: number;
   dailyBuffer: number;
-  loggedSleepHours: number;
-  sleepTargetHours: number;
   hasTrackedSessions?: boolean;
-  showSleepMetric?: boolean;
 }
 
 function remainingDaysInWeek(weekEnd: DateString): number {
@@ -36,10 +31,7 @@ export function WeeklyProgressCard({
   sessions,
   weeklyBuffer,
   dailyBuffer,
-  loggedSleepHours,
-  sleepTargetHours,
   hasTrackedSessions = true,
-  showSleepMetric = false,
 }: WeeklyProgressCardProps): ReactElement {
   const safeTarget = weeklyTarget;
   const progressRatio = safeTarget > 0 ? Math.min(1, completedHours / safeTarget) : 0;
@@ -57,7 +49,7 @@ export function WeeklyProgressCard({
             Weekly Macro Progress
           </h3>
           <p className="mt-1 text-xs text-slate-400">
-            {completedHours.toFixed(1)}h of {safeTarget.toFixed(1)}h target
+            {safeTarget > 0 ? `${completedHours.toFixed(1)}h of ${safeTarget.toFixed(1)}h target` : "0.0h of 0.0h target"}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -88,9 +80,8 @@ export function WeeklyProgressCard({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 sm:col-span-2">
           <p className="text-xs uppercase tracking-wide text-violet-200">Your Weekly Buffer</p>
-          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyTarget <= 0 ? "â€” hrs" : `${weeklyBuffer.toFixed(1)} hrs`}</p>
+          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyTarget <= 0 ? "— hrs" : `${weeklyBuffer.toFixed(1)} hrs`}</p>
           <p className="mt-1 text-xs text-slate-400">{weeklyTarget <= 0 ? "Set your weekly target to calculate your buffer margin." : `Daily Average Buffer: ${dailyBuffer.toFixed(1)} hrs/day`}</p>
-          {showSleepMetric && sleepTargetHours > 0 ? <p className="mt-2 border-t border-violet-500/15 pt-2 text-sm text-violet-100">Sleep: {loggedSleepHours.toFixed(1)} / {sleepTargetHours.toFixed(1)} hrs</p> : null}
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
           <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-wide text-slate-400">

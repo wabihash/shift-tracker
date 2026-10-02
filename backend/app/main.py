@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
 from app.monitoring import MonitoringMiddleware, configure_logging, router as monitoring_router
-from app.routers import activities, analytics, planner, profile, sessions
+from app.routers import activities, analytics, auth, planner, profile, sessions
 
 load_dotenv()
 
@@ -40,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(monitoring_router)
+app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(activities.router)
 app.include_router(planner.router)

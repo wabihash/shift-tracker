@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import http.client
 import json
 import logging
 import re
 import time
-import urllib.error
-import urllib.request
 import uuid
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
@@ -16,11 +13,10 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import event, text
 
-from app import auth
+from app.core import auth
 from app.db import engine
 
 SLOW_REQUEST_MS = 800.0
-JWKS_TIMEOUT_SECONDS = 3.0
 
 request_id_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 user_id_context: ContextVar[str | None] = ContextVar("user_id", default=None)
@@ -63,7 +59,7 @@ router = APIRouter(tags=["health"])
 
 
 def set_current_user_id(user_id: str) -> None:
-    """Attach the authenticated Clerk subject to this request's structured logs."""
+    """Attach the authenticated internal user ID to this request's structured logs."""
     user_id_context.set(user_id)
 
 
@@ -76,41 +72,15 @@ def _check_database() -> bool:
         return False
 
 
-def _check_clerk_jwks() -> bool:
-    if not auth.JWKS_URL:
-        logger.warning("readiness dependency check failed", extra={"dependency": "clerk_jwks"})
-        return False
-    request = urllib.request.Request(
-        auth.JWKS_URL,
-        headers={"Accept": "application/json", "User-Agent": "shift-tracker-readiness/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=JWKS_TIMEOUT_SECONDS) as response:
-            if response.status != 200:
-                logger.warning(
-                    "readiness dependency check failed",
-                    extra={"dependency": "clerk_jwks", "status_code": response.status},
-                )
-                return False
-            document = json.loads(response.read(1_048_576))
-            reachable = isinstance(document, dict) and isinstance(document.get("keys"), list) and bool(document["keys"])
-            if not reachable:
-                logger.warning("readiness dependency returned an invalid JWKS document", extra={"dependency": "clerk_jwks"})
-            return reachable
-    except (http.client.HTTPException, urllib.error.URLError, TimeoutError, ValueError, OSError):
-        logger.warning("readiness dependency check failed", extra={"dependency": "clerk_jwks"}, exc_info=True)
-        return False
-
-
 @router.get("/health/ready")
 def readiness_check() -> JSONResponse:
     database_ready = _check_database()
-    auth_ready = _check_clerk_jwks()
+    auth_ready = bool(auth.JWT_SECRET_KEY)
     ready = database_ready and auth_ready
     body = {
         "status": "ready" if ready else "degraded",
         "database": "connected" if database_ready else "unavailable",
-        "auth": "reachable" if auth_ready else "unreachable",
+        "auth": "configured" if auth_ready else "not_configured",
     }
     return JSONResponse(status_code=200 if ready else 503, content=body)
 

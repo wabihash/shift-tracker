@@ -17,6 +17,16 @@ export interface PendingSessionLog extends SessionLog {
   queued_at?: string;
 }
 
+function localUserId(): number | undefined {
+  try {
+    const raw = localStorage.getItem("user_profile");
+    const id = raw ? (JSON.parse(raw) as { id?: unknown }).id : undefined;
+    return typeof id === "number" ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readOutbox(): Promise<PendingSessionLog[]> {
   return (await get<PendingSessionLog[]>(OUTBOX_SESSIONS_KEY)) ?? [];
 }
@@ -58,7 +68,7 @@ export async function saveSessionLocally(
 
   const record: PendingSessionLog = {
     id: sessionPayload.id ?? 0,
-    clerk_user_id: sessionPayload.clerk_user_id ?? "",
+    user_id: "user_id" in sessionPayload ? sessionPayload.user_id : localUserId(),
     activity_id: sessionPayload.activity_id,
     shift_number: sessionPayload.shift_number ?? null,
     planned_shift_id: sessionPayload.planned_shift_id ?? null,

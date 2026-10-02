@@ -37,20 +37,14 @@ class ProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    clerk_user_id: str
+    user_id: int
     user_name: str | None
-    wake_time: time | None
-    bed_cutoff: time | None
     weekly_target_hours: float
-    weekly_break_target_hours: float = 0.0
     shift_rules: list[ShiftRuleRead]
 
 
 class ProfileUpdateBody(BaseModel):
-    wake_time: time = time(0, 0)
-    bed_cutoff: time = time(0, 0)
     weekly_target_hours: float = Field(ge=0.0)
-    weekly_break_target_hours: float = Field(default=0.0, ge=0.0, le=168.0)
 
 
 class ShiftRuleUpdateBody(BaseModel):
@@ -67,34 +61,31 @@ class ShiftRuleUpdateBody(BaseModel):
 
 
 def _load_profile(
-    session: Session, clerk_user_id: str
+    session: Session, user_id: int
 ) -> UserProfile | None:
     statement = (
         select(UserProfile)
-        .where(UserProfile.clerk_user_id == clerk_user_id)
+        .where(UserProfile.user_id == user_id)
         .options(selectinload(UserProfile.shift_rules))
     )
     return session.exec(statement).first()
 
 
-def get_or_create_profile(session: Session, clerk_user_id: str) -> UserProfile:
-    profile = _load_profile(session, clerk_user_id)
+def get_or_create_profile(session: Session, user_id: int) -> UserProfile:
+    profile = _load_profile(session, user_id)
     if profile is not None:
         return profile
 
     profile = UserProfile(
-        clerk_user_id=clerk_user_id,
-        wake_time=time(0, 0),
-        bed_cutoff=time(0, 0),
+        user_id=user_id,
         weekly_target_hours=0.0,
-        weekly_break_target_hours=0.0,
     )
     session.add(profile)
     session.flush()
     session.commit()
     session.refresh(profile)
 
-    loaded = _load_profile(session, clerk_user_id)
+    loaded = _load_profile(session, user_id)
     if loaded is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -103,53 +94,47 @@ def get_or_create_profile(session: Session, clerk_user_id: str) -> UserProfile:
     return loaded
 
 
-def create_empty_profile(session: Session, clerk_user_id: str) -> UserProfile:
-    profile = _load_profile(session, clerk_user_id)
+def create_empty_profile(session: Session, user_id: int) -> UserProfile:
+    profile = _load_profile(session, user_id)
     if profile is not None:
         return profile
     profile = UserProfile(
-        clerk_user_id=clerk_user_id,
-        wake_time=time(0, 0),
-        bed_cutoff=time(0, 0),
+        user_id=user_id,
         weekly_target_hours=0.0,
-        weekly_break_target_hours=0.0,
     )
     session.add(profile)
     session.commit()
     session.refresh(profile)
-    return _load_profile(session, clerk_user_id) or profile
+    return _load_profile(session, user_id) or profile
 
 
 @router.get("/profile", response_model=ProfileRead | None)
 def get_profile(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> UserProfile | None:
-    return _load_profile(session, clerk_user_id)
+    return _load_profile(session, user_id)
 
 
 @router.put("/profile", response_model=ProfileRead)
 def update_profile(
     body: ProfileUpdateBody,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> UserProfile:
-    profile = create_empty_profile(session, clerk_user_id)
-    profile.wake_time = body.wake_time
-    profile.bed_cutoff = body.bed_cutoff
+    profile = create_empty_profile(session, user_id)
     profile.weekly_target_hours = body.weekly_target_hours
-    profile.weekly_break_target_hours = body.weekly_break_target_hours
     session.add(profile)
     session.commit()
     session.refresh(profile)
-    return _load_profile(session, clerk_user_id) or profile
+    return _load_profile(session, user_id) or profile
 
 
 @router.put("/shift-rules", response_model=list[ShiftRuleRead])
 def update_shift_rules(
     body: list[ShiftRuleUpdateBody],
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> list[ShiftRule]:
     if len(body) > 224:
         raise HTTPException(
@@ -161,7 +146,7 @@ def update_shift_rules(
     if len(set(productive_shifts)) != len(productive_shifts):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Productive shift numbers must be unique per day")
 
-    profile = create_empty_profile(session, clerk_user_id)
+    profile = create_empty_profile(session, user_id)
     rules_by_id = {rule.id: rule for rule in profile.shift_rules}
     updated: list[ShiftRule] = []
     retained_ids: set[int] = set()
@@ -203,9 +188,9 @@ def update_shift_rules(
 @router.get("/shift-rules", response_model=dict[str, list[ShiftRuleRead]])
 def get_shift_rules(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> dict[str, list[ShiftRule]]:
-    profile = _load_profile(session, clerk_user_id)
+    profile = _load_profile(session, user_id)
     grouped: dict[str, list[ShiftRule]] = {day: [] for day in DAY_NAMES}
     if profile is None:
         return grouped

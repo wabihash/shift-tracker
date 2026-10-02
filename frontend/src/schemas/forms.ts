@@ -31,13 +31,10 @@ export const sessionDeductionSchema = z.object({
 });
 
 export const profileSettingsSchema = z.object({
-  wake_time: timeStringSchema,
-  bed_cutoff: timeStringSchema,
   weekly_target_hours: z
     .number()
     .min(0, "Weekly target cannot be negative")
     .max(168, "Weekly target cannot exceed 168 hours"),
-  weekly_break_target_hours: z.number().min(0).max(168),
 });
 
 export type ActivityFormValues = z.infer<typeof activitySchema>;

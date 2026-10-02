@@ -6,15 +6,7 @@ import { safeErrorMessage } from "../../api/client";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import { useToast } from "../common/ToastProvider";
 import { profileSettingsSchema, type ProfileSettingsFormValues } from "../../schemas/forms";
-import {
-  DEFAULT_BED_CUTOFF,
-  DEFAULT_WAKE_TIME,
-  type UserProfileDetail,
-} from "../../types/schema";
-
-function inputTime(value: string): string {
-  return value.slice(0, 5);
-}
+import type { UserProfileDetail } from "../../types/schema";
 
 export function ProfileSettings(): ReactElement {
   const token = useAuthToken();
@@ -26,10 +18,7 @@ export function ProfileSettings(): ReactElement {
     enabled: !!token,
   });
   const [values, setValues] = useState<ProfileSettingsFormValues>({
-    wake_time: DEFAULT_WAKE_TIME,
-    bed_cutoff: DEFAULT_BED_CUTOFF,
     weekly_target_hours: 0,
-    weekly_break_target_hours: 0,
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [weeklyTargetInput, setWeeklyTargetInput] = useState("0");
@@ -38,10 +27,7 @@ export function ProfileSettings(): ReactElement {
     const profile = profileQuery.data;
     if (!profile) return;
     setValues({
-      wake_time: inputTime(profile.wake_time),
-      bed_cutoff: inputTime(profile.bed_cutoff),
       weekly_target_hours: profile.weekly_target_hours,
-      weekly_break_target_hours: profile.weekly_break_target_hours,
     });
     setWeeklyTargetInput(String(profile.weekly_target_hours));
   }, [profileQuery.data]);

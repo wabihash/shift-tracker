@@ -95,12 +95,8 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
   const analytics = analyticsQuery.data;
   const activityTarget = (activitiesQuery.data ?? []).reduce((sum, activity) => sum + activity.weekly_target_hours, 0);
   const weeklyTarget = activityTarget > 0 ? activityTarget : (profileQuery.data?.weekly_target_hours ?? 0);
-  const sleepActivity = activitiesQuery.data?.find((activity) => activity.name.trim().toLowerCase() === "sleep");
   const trackedSessions = sessionsQuery.data ?? [];
   const completedHours = trackedSessions.reduce((sum, session) => sum + session.net_minutes / 60, 0);
-  const loggedSleepHours = sleepActivity
-    ? trackedSessions.filter((session) => session.activity_id === sleepActivity.id).reduce((sum, session) => sum + session.net_minutes / 60, 0)
-    : 0;
   const overallPercentage = weeklyTarget > 0 ? Math.min(100, completedHours / weeklyTarget * 100) : 0;
   const activeWeekHasSessions = (sessionsQuery.data ?? []).length > 0;
   const isNewUser = !profileQuery.data?.weekly_target_hours || ((activitiesQuery.data?.length ?? 0) === 0 && !activeWeekHasSessions);
@@ -186,12 +182,9 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
               overallPercentage={overallPercentage}
               weekEnd={weekEnd}
               sessions={trackedSessions}
-              weeklyBuffer={Math.max(0, 168 - weeklyTarget)}
-              dailyBuffer={Math.round((Math.max(0, 168 - weeklyTarget) / 7) * 10) / 10}
-              loggedSleepHours={loggedSleepHours}
-              sleepTargetHours={analytics?.metrics.find((metric) => metric.name.trim().toLowerCase() === "sleep")?.target_hours ?? 0}
+              weeklyBuffer={weeklyTarget > 0 ? Math.max(0, 168 - weeklyTarget) : 0}
+              dailyBuffer={weeklyTarget > 0 ? Math.round((Math.max(0, 168 - weeklyTarget) / 7) * 10) / 10 : 0}
               hasTrackedSessions={activeWeekHasSessions}
-              showSleepMetric={Boolean(sleepActivity && sleepActivity.weekly_target_hours > 0)}
             />
             <CapAlertBanner
               capAlerts={analytics?.cap_alerts ?? []}

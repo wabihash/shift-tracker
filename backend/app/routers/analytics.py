@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.db import get_session
-from app.models import Activity, SessionLog, ShiftRule, VarianceType
+from app.models import Activity, SessionLog, ShiftRule, UserProfile, VarianceType
 from app.routers.profile import _load_profile
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -79,13 +79,13 @@ class HistorySummaryResponse(BaseModel):
 @router.get("/history-summary", response_model=HistorySummaryResponse)
 def get_history_summary(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
     group_by: Annotated[str, Query(pattern="^(week|month)$")],
 ) -> HistorySummaryResponse:
-    profile = _load_profile(session, clerk_user_id)
+    profile = _load_profile(session, user_id)
     logs = list(session.exec(
         select(SessionLog)
-        .where(SessionLog.clerk_user_id == clerk_user_id)
+        .where(SessionLog.user_id == user_id)
         .order_by(SessionLog.logged_date)
     ).all())
     groups: dict[date, list[SessionLog]] = {}
@@ -97,7 +97,7 @@ def get_history_summary(
         groups.setdefault(period_start, []).append(log)
 
     rows: list[HistorySummaryRow] = []
-    activities = list(session.exec(select(Activity).join(UserProfile, Activity.profile_id == UserProfile.id).where(UserProfile.clerk_user_id == clerk_user_id)).all())
+    activities = list(session.exec(select(Activity).join(UserProfile, Activity.profile_id == UserProfile.id).where(UserProfile.user_id == user_id)).all())
     for period_start, period_logs in sorted(groups.items(), reverse=True):
         sleep_logs = []
         logged_hours = sum(log.net_minutes for log in period_logs) / 60.0
@@ -139,7 +139,7 @@ def _weekly_buffer(weekly_target: float, sleep_hours: float, rules: list[ShiftRu
 @router.get("/weekly", response_model=WeeklyAnalyticsResponse)
 def get_weekly_analytics(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
     week_start: Annotated[date, Query(description="Inclusive week start (logged_date)")],
     week_end: Annotated[date, Query(description="Inclusive week end (logged_date)")],
 ) -> WeeklyAnalyticsResponse:
@@ -149,7 +149,7 @@ def get_weekly_analytics(
             detail="week_end must be on or after week_start",
         )
 
-    profile = _load_profile(session, clerk_user_id)
+    profile = _load_profile(session, user_id)
 
     activities = list(
         session.exec(
@@ -162,7 +162,7 @@ def get_weekly_analytics(
     sessions = list(
         session.exec(
             select(SessionLog).where(
-                SessionLog.clerk_user_id == clerk_user_id,
+                SessionLog.user_id == user_id,
                 SessionLog.logged_date >= week_start,
                 SessionLog.logged_date <= week_end,
             )

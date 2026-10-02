@@ -108,7 +108,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ["react", "react-dom"],
-          clerk: ["@clerk/react"],
           charts: ["recharts"],
           dateUtils: ["date-fns"],
         },

@@ -34,12 +34,6 @@ function contains(window: ShiftWindow, now: Date): boolean {
   return now >= window.scheduledStart && now < window.scheduledEnd;
 }
 
-export function getBedtimeBoundary(start: Date, bedtime: TimeString): Date {
-  const boundary = atTime(start, bedtime);
-  if (boundary <= start) boundary.setDate(boundary.getDate() + 1);
-  return boundary;
-}
-
 export function useShiftEngine(
   rules: ShiftRule[],
   timerStatus: TimerStatus,

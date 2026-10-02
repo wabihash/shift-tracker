@@ -1,4 +1,3 @@
-import { ClerkProvider } from "@clerk/clerk-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -6,14 +5,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { registerSW } from "virtual:pwa-register";
+import { AuthProvider } from "./context/AuthContext";
 
 registerSW({ immediate: true });
-
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-
-if (!clerkPublishableKey) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY environment variable.");
-}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,10 +27,10 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ClerkProvider publishableKey={clerkPublishableKey}>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
         <App />
-      </QueryClientProvider>
-    </ClerkProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   </StrictMode>,
 );

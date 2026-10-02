@@ -1,9 +1,7 @@
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/clerk-react";
 import { Settings2 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
 
-import { setClerkTokenGetter } from "./api/client";
-import { AuthTokenProvider } from "./auth/AuthTokenContext";
+import { useAuth } from "./context/AuthContext";
 import { AnalyticsDashboard } from "./components/dashboard/AnalyticsDashboard";
 import { ShiftStatusBanner } from "./components/layout/ShiftStatusBanner";
 import { NetworkStatusBadge } from "./components/layout/NetworkStatusBadge";
@@ -18,71 +16,26 @@ import { ToastProvider } from "./components/common/ToastProvider";
 import { getCadenceMessage } from "./config/cadenceMessages";
 import { InstallPwaButton } from "./components/InstallPwaButton";
 
-function AuthenticatedDashboard(): ReactElement | null {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
-  const [token, setToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn) {
-      setClerkTokenGetter(async () => null);
-      setToken(null);
-      return;
-    }
-
-    let active = true;
-    setToken(null);
-    void getToken().then((initialToken) => {
-      if (!active || !initialToken) {
-        return;
-      }
-      setClerkTokenGetter(() => getToken());
-      setToken(initialToken);
-    });
-
-    return () => {
-      active = false;
-      setClerkTokenGetter(async () => null);
-    };
-  }, [getToken, isLoaded, isSignedIn]);
-
-  return isLoaded && isSignedIn && token ? (
-    <AuthTokenProvider token={token}>
-      <ShiftTrackerApp />
-    </AuthTokenProvider>
-  ) : null;
+function AuthScreen(): ReactElement {
+  const { login, register } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setError(""); setBusy(true);
+    try { await (mode === "login" ? login(email, password) : register(email, password)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to authenticate."); }
+    finally { setBusy(false); }
+  };
+  return <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100"><section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-7 shadow-xl"><h1 className="text-2xl font-semibold">Shift Tracker</h1><p className="mt-2 text-sm text-slate-400">Sign in or create an account to continue.</p><form className="mt-6 space-y-4" onSubmit={(event) => void submit(event)}><label className="block space-y-1 text-sm text-slate-300">Email<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white" /></label><label className="block space-y-1 text-sm text-slate-300">Password<input required minLength={8} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white" /></label>{error ? <p role="alert" className="text-sm text-rose-300">{error}</p> : null}<button disabled={busy} className="w-full rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50">{busy ? "Please wait…" : mode === "login" ? "Log In" : "Create Account"}</button></form><button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }} className="mt-4 text-sm text-indigo-300 hover:text-indigo-200">{mode === "login" ? "Need an account? Register" : "Already registered? Log in"}</button></section></main>;
 }
 
-function AuthenticatedApp(): ReactElement {
-  const { isLoaded } = useAuth();
-
-  if (!isLoaded) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">
-        Loading your account...
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <SignedIn>
-        <AuthenticatedDashboard />
-      </SignedIn>
-      <SignedOut>
-        <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
-          <section className="w-full max-w-md space-y-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-xl">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">Shift Tracker</h1>
-              <p className="mt-2 text-sm text-slate-400">Sign in to manage your shifts and sessions.</p>
-            </div>
-            <SignInButton mode="modal">
-              <button type="button" className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900">Sign in</button>
-            </SignInButton>
-          </section>
-        </main>
-      </SignedOut>
-    </>
-  );
+function UserMenu(): ReactElement {
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  return <div className="relative"><button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-100">{user?.email.slice(0, 1).toUpperCase()}</button>{open ? <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-xl"><p className="truncate text-xs text-slate-300">{user?.email}</p><button type="button" onClick={logout} className="mt-3 w-full rounded-md px-3 py-2 text-left text-sm text-rose-200 hover:bg-slate-800">Log Out</button></div> : null}</div>;
 }
 function LiveClock(): ReactElement {
   const [now, setNow] = useState(() => new Date());
@@ -139,7 +92,7 @@ function ShiftTrackerApp(): ReactElement {
       <CadenceSettings open={shiftEditorOpen} onClose={() => setShiftEditorOpen(false)} />
       <div className="flex min-h-screen w-full flex-col overflow-x-hidden bg-slate-950 pt-2 text-slate-100">
         <header className="sticky top-0 z-40 shrink-0 border-b border-slate-800 bg-slate-900/95 shadow-lg shadow-slate-950/20 backdrop-blur">
-          <div className="mx-auto flex min-h-16 max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3">
+          <div className="mx-auto flex min-h-16 max-w-[1600px] items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4">
             <div className="flex items-center gap-3">
               <div className="text-sm font-semibold tracking-wide text-indigo-300">
                 Shift Tracker
@@ -147,21 +100,11 @@ function ShiftTrackerApp(): ReactElement {
               <LiveClock />
             </div>
             <QuoteBanner />
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
               <NetworkStatusBadge />
-              <button type="button" onClick={() => setShiftEditorOpen(true)} className="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300">
-                <Settings2 className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Configure Shifts</span><span className="sm:hidden">Shifts</span>
-              </button>
               <KeyboardShortcutsModal />
               <InstallPwaButton />
-              <UserButton
-                afterSignOutUrl="/"
-                appearance={{
-                  elements: {
-                    avatarBox: "h-8 w-8",
-                  },
-                }}
-              />
+              <UserMenu />
             </div>
           </div>
           <nav aria-label="Main navigation" className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-4 pb-2">
@@ -231,5 +174,7 @@ function ShiftTrackerApp(): ReactElement {
 }
 
 export default function App(): ReactElement {
-  return <AuthenticatedApp />;
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Loading your account...</div>;
+  return isAuthenticated ? <ShiftTrackerApp /> : <AuthScreen />;
 }

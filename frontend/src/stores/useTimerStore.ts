@@ -9,7 +9,6 @@ export interface TimerSchedule {
   scheduledStartIso: string | null;
   scheduledEndIso: string | null;
   breakOverrunMinutes: number;
-  bedtimeLimitIso: string | null;
 }
 
 interface TimerState {
@@ -26,7 +25,6 @@ interface TimerState {
   scheduledStartIso: string | null;
   scheduledEndIso: string | null;
   breakOverrunMinutes: number;
-  bedtimeLimitIso: string | null;
   breakEndsAtIso: string | null;
 }
 
@@ -57,7 +55,6 @@ const initialState: TimerState = {
   scheduledStartIso: null,
   scheduledEndIso: null,
   breakOverrunMinutes: 0,
-  bedtimeLimitIso: null,
   breakEndsAtIso: null,
 };
 
@@ -104,7 +101,6 @@ export const useTimerStore = create<TimerStore>()(
           scheduledStartIso: schedule?.scheduledStartIso ?? null,
           scheduledEndIso: schedule?.scheduledEndIso ?? null,
           breakOverrunMinutes: schedule?.breakOverrunMinutes ?? 0,
-          bedtimeLimitIso: schedule?.bedtimeLimitIso ?? null,
           breakEndsAtIso: null,
         });
       },
@@ -114,7 +110,7 @@ export const useTimerStore = create<TimerStore>()(
         grossSeconds: 0, utcStartAnchor: null, actualStartIso: new Date().toISOString(),
         shiftNumber: null,
         scheduledStartIso: null, scheduledEndIso: endIso, breakOverrunMinutes: 0,
-        bedtimeLimitIso: null, breakEndsAtIso: endIso, tickTs: Date.now(),
+        breakEndsAtIso: endIso, tickTs: Date.now(),
       }),
 
       pauseTimer: () => {
@@ -192,7 +188,6 @@ export const useTimerStore = create<TimerStore>()(
         scheduledStartIso: state.scheduledStartIso,
         scheduledEndIso: state.scheduledEndIso,
         breakOverrunMinutes: state.breakOverrunMinutes,
-        bedtimeLimitIso: state.bedtimeLimitIso,
         breakEndsAtIso: state.breakEndsAtIso,
       }),
     },

@@ -129,7 +129,6 @@ export function LiveStopwatch({
       scheduledStartIso: activeShift?.scheduledStart.toISOString() ?? null,
       scheduledEndIso: activeShift?.scheduledEnd.toISOString() ?? null,
       breakOverrunMinutes,
-      bedtimeLimitIso: null,
     });
   }, [activeShift, runningShiftNumber, selectedActivityId, shiftEngine.now, shiftEngine.precedingBreakEnd, startTimer]);
 

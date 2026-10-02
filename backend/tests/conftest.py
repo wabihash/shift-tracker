@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
-os.environ.setdefault("CLERK_ISSUER", "https://example.clerk.accounts.dev")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
 
 from collections.abc import Generator

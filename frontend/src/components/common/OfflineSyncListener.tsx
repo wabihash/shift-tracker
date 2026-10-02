@@ -8,14 +8,16 @@ import {
 } from "../../services/offlineStorage";
 import { useShiftStore } from "../../stores/useShiftStore";
 import { useToast } from "./ToastProvider";
+import { useAuth } from "../../context/AuthContext";
 
 export function OfflineSyncListener(): null {
   const queryClient = useQueryClient();
   const { notify } = useToast();
+  const { user } = useAuth();
   const isSyncingRef = useRef(false);
 
   const syncPendingSessions = useCallback(async () => {
-    if (isSyncingRef.current) {
+    if (isSyncingRef.current || !user) {
       return;
     }
 
@@ -26,7 +28,8 @@ export function OfflineSyncListener(): null {
 
     useShiftStore.getState().setOfflineStatus(false);
 
-    const pending = await getPendingOutbox();
+    const allPending = await getPendingOutbox();
+    const pending = allPending.filter((item) => item.user_id === user.id);
     useShiftStore.getState().setPendingOutboxCount(pending.length);
 
     if (pending.length === 0) {
@@ -84,7 +87,7 @@ export function OfflineSyncListener(): null {
       }
 
       // Check if outbox is completely cleared
-      const remainingAfter = await getPendingOutbox();
+      const remainingAfter = (await getPendingOutbox()).filter((item) => item.user_id === user.id);
       useShiftStore.getState().setPendingOutboxCount(remainingAfter.length);
 
       if (remainingAfter.length === 0 && syncedCount > 0) {
@@ -104,13 +107,14 @@ export function OfflineSyncListener(): null {
       isSyncingRef.current = false;
       useShiftStore.getState().setSyncingStatus(false);
     }
-  }, [notify, queryClient]);
+  }, [notify, queryClient, user]);
 
   useEffect(() => {
     // Initial sync check on mount
     void getPendingOutbox().then((items) => {
-      useShiftStore.getState().setPendingOutboxCount(items.length);
-      if (typeof navigator !== "undefined" && navigator.onLine && items.length > 0) {
+      const owned = items.filter((item) => item.user_id === user?.id);
+      useShiftStore.getState().setPendingOutboxCount(owned.length);
+      if (user && typeof navigator !== "undefined" && navigator.onLine && owned.length > 0) {
         void syncPendingSessions();
       }
     });
@@ -126,7 +130,7 @@ export function OfflineSyncListener(): null {
       window.removeEventListener("online", syncPendingSessions);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [syncPendingSessions]);
+  }, [syncPendingSessions, user]);
 
   return null;
 }

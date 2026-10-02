@@ -19,22 +19,23 @@ class VarianceType(str, Enum):
     EARLY_EXIT = "EARLY_EXIT"
 
 
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True, max_length=320)
+    hashed_password: str = Field(max_length=255)
+    created_at: datetime = Field(default_factory=_utc_now)
+
+
 class UserProfile(SQLModel, table=True):
     __tablename__ = "user_profiles"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    clerk_user_id: str = Field(index=True, unique=True, max_length=255)
+    user_id: int | None = Field(default=None, foreign_key="users.id", index=True, unique=True)
     user_name: Optional[str] = Field(default=None, max_length=255)
-    wake_time: time = Field(default=time(0, 0))
-    bed_cutoff: time = Field(default=time(0, 0))
     weekly_target_hours: float = Field(default=0.0)
-    weekly_break_target_hours: float = Field(default=0.0, nullable=False)
     created_at: datetime = Field(default_factory=_utc_now)
-
-    @property
-    def bedtime_limit(self) -> time:
-        """Compatibility alias for the persisted bedtime cutoff setting."""
-        return self.bed_cutoff
 
     shift_rules: list["ShiftRule"] = Relationship(
         sa_relationship=relationship("ShiftRule", back_populates="profile")
@@ -88,7 +89,7 @@ class PlannedShift(SQLModel, table=True):
     __tablename__ = "planned_shifts"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    clerk_user_id: str = Field(index=True, max_length=255)
+    user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
     activity_id: int = Field(foreign_key="activities.id", index=True)
     title: str = Field(max_length=255)
     start_time: datetime
@@ -104,7 +105,7 @@ class SessionLog(SQLModel, table=True):
     __tablename__ = "session_logs"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    clerk_user_id: str = Field(index=True, max_length=255)
+    user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
     activity_id: int = Field(foreign_key="activities.id", index=True)
     shift_number: Optional[int] = Field(default=None, ge=1, le=4, index=True)
     planned_shift_id: Optional[int] = Field(

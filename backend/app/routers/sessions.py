@@ -24,7 +24,7 @@ class SessionLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    clerk_user_id: str
+    user_id: int
     activity_id: int
     shift_number: int | None = None
     planned_shift_id: int | None
@@ -67,14 +67,14 @@ class SessionLogCreateBody(BaseModel):
 
 
 def _assert_activity_owned(
-    session: Session, clerk_user_id: str, activity_id: int
+    session: Session, user_id: int, activity_id: int
 ) -> Activity:
     statement = (
         select(Activity)
         .join(UserProfile, Activity.profile_id == UserProfile.id)
         .where(
             Activity.id == activity_id,
-            UserProfile.clerk_user_id == clerk_user_id,
+            UserProfile.user_id == user_id,
         )
     )
     activity = session.exec(statement).first()
@@ -88,14 +88,14 @@ def _assert_activity_owned(
 
 def _assert_planned_shift_owned(
     session: Session,
-    clerk_user_id: str,
+    user_id: int,
     planned_shift_id: int,
     activity_id: int,
 ) -> None:
     shift = session.get(PlannedShift, planned_shift_id)
     if (
         shift is None
-        or shift.clerk_user_id != clerk_user_id
+        or shift.user_id != user_id
         or shift.activity_id != activity_id
     ):
         raise HTTPException(
@@ -136,15 +136,15 @@ def _compute_variance(
 def create_session(
     body: SessionLogCreateBody,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> SessionLog:
-    _assert_activity_owned(session, clerk_user_id, body.activity_id)
+    _assert_activity_owned(session, user_id, body.activity_id)
     if body.shift_number is not None:
         shift_rule = session.exec(
             select(ShiftRule)
             .join(UserProfile, ShiftRule.profile_id == UserProfile.id)
             .where(
-                UserProfile.clerk_user_id == clerk_user_id,
+                UserProfile.user_id == user_id,
                 ShiftRule.shift_number == body.shift_number,
                 ShiftRule.slot_type == "productive",
             )
@@ -153,7 +153,7 @@ def create_session(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Shift number is not configured for this day")
     if body.planned_shift_id is not None:
         _assert_planned_shift_owned(
-            session, clerk_user_id, body.planned_shift_id, body.activity_id
+            session, user_id, body.planned_shift_id, body.activity_id
         )
 
     net_minutes = compute_net_minutes(body.gross_minutes, body.deducted_minutes)
@@ -165,7 +165,7 @@ def create_session(
     )
 
     log = SessionLog(
-        clerk_user_id=clerk_user_id,
+        user_id=user_id,
         activity_id=body.activity_id,
         shift_number=body.shift_number,
         planned_shift_id=body.planned_shift_id,
@@ -191,7 +191,7 @@ def create_session(
 @router.get("/sessions", response_model=list[SessionLogRead])
 def list_sessions(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
     start_date: Annotated[date, Query(description="Inclusive logged_date start")],
     end_date: Annotated[date, Query(description="Inclusive logged_date end")],
 ) -> list[SessionLog]:
@@ -204,7 +204,7 @@ def list_sessions(
     statement = (
         select(SessionLog)
         .where(
-            SessionLog.clerk_user_id == clerk_user_id,
+            SessionLog.user_id == user_id,
             SessionLog.logged_date >= start_date,
             SessionLog.logged_date <= end_date,
         )

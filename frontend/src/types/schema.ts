@@ -4,8 +4,6 @@ export type DateString = string;
 /** ISO-8601 time string (HH:MM:SS) */
 export type TimeString = string;
 
-export const DEFAULT_WAKE_TIME: TimeString = "00:00";
-export const DEFAULT_BED_CUTOFF: TimeString = "00:00";
 
 /** ISO-8601 datetime string */
 export type DateTimeString = string;
@@ -18,12 +16,9 @@ export type VarianceType =
 
 export interface UserProfile {
   id: number;
-  clerk_user_id: string;
+  user_id?: number;
   user_name: string | null;
-  wake_time: TimeString;
-  bed_cutoff: TimeString;
   weekly_target_hours: number;
-  weekly_break_target_hours: number;
   /** Present on persisted records; omitted on some profile API responses. */
   created_at?: DateTimeString;
 }
@@ -57,7 +52,7 @@ export interface Activity {
 
 export interface PlannedShift {
   id: number;
-  clerk_user_id: string;
+  user_id: number;
   activity_id: number;
   title: string;
   start_time: DateTimeString;
@@ -67,7 +62,7 @@ export interface PlannedShift {
 
 export interface SessionLog {
   id: number;
-  clerk_user_id: string;
+  user_id?: number;
   activity_id: number;
   shift_number: number | null;
   planned_shift_id: number | null;
@@ -141,10 +136,7 @@ export interface HistoricalSummaryResponse {
 }
 
 export interface ProfileUpdateInput {
-  wake_time: TimeString;
-  bed_cutoff: TimeString;
   weekly_target_hours: number;
-  weekly_break_target_hours: number;
 }
 
 export interface ShiftRuleUpdateInput {

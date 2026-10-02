@@ -37,14 +37,14 @@ class ActivityUpdateBody(BaseModel):
 
 
 def _get_owned_activity(
-    session: Session, clerk_user_id: str, activity_id: int
+    session: Session, user_id: int, activity_id: int
 ) -> Activity:
     statement = (
         select(Activity)
         .join(UserProfile, Activity.profile_id == UserProfile.id)
         .where(
             Activity.id == activity_id,
-            UserProfile.clerk_user_id == clerk_user_id,
+            UserProfile.user_id == user_id,
         )
     )
     activity = session.exec(statement).first()
@@ -59,9 +59,9 @@ def _get_owned_activity(
 @router.get("/activities", response_model=list[ActivityRead])
 def list_activities(
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> list[Activity]:
-    profile = session.exec(select(UserProfile).where(UserProfile.clerk_user_id == clerk_user_id)).first()
+    profile = session.exec(select(UserProfile).where(UserProfile.user_id == user_id)).first()
     if profile is None:
         return []
     statement = (
@@ -76,9 +76,9 @@ def list_activities(
 def create_activity(
     body: ActivityCreateBody,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> Activity:
-    profile = create_empty_profile(session, clerk_user_id)
+    profile = create_empty_profile(session, user_id)
     activity = Activity(
         profile_id=profile.id,
         name=body.name.strip(),
@@ -96,7 +96,7 @@ def update_activity(
     activity_id: int,
     body: ActivityUpdateBody,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> Activity:
     if body.name is None and body.weekly_target_hours is None and body.color is None:
         raise HTTPException(
@@ -104,7 +104,7 @@ def update_activity(
             detail="At least one field must be provided",
         )
 
-    activity = _get_owned_activity(session, clerk_user_id, activity_id)
+    activity = _get_owned_activity(session, user_id, activity_id)
 
     if body.name is not None:
         activity.name = body.name.strip()
@@ -123,20 +123,20 @@ def update_activity(
 def delete_activity(
     activity_id: int,
     session: Annotated[Session, Depends(get_session)],
-    clerk_user_id: Annotated[str, Depends(get_current_user)],
+    user_id: Annotated[int, Depends(get_current_user)],
 ) -> None:
-    activity = _get_owned_activity(session, clerk_user_id, activity_id)
+    activity = _get_owned_activity(session, user_id, activity_id)
 
     session.exec(
         delete(SessionLog).where(
             SessionLog.activity_id == activity.id,
-            SessionLog.clerk_user_id == clerk_user_id,
+            SessionLog.user_id == user_id,
         )
     )
     session.exec(
         delete(PlannedShift).where(
             PlannedShift.activity_id == activity.id,
-            PlannedShift.clerk_user_id == clerk_user_id,
+            PlannedShift.user_id == user_id,
         )
     )
     session.delete(activity)

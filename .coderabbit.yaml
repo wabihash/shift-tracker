@@ -83,7 +83,6 @@ reviews:
         Architectural consistency:
         - Tenant key is clerk_user_id from get_current_user; never trust client-supplied user ids.
         - Time math must use UTC anchors; do not mix naive local timestamps with ISO UTC strings.
-        - Sleep planning window defaults: bedtime cutoff 22:15 (10:15 PM) and wake 05:41 AM.
         - Quota: net_minutes = max(0, gross_minutes - deducted_minutes). Caps fire when
           completed_hours >= activity weekly_target_hours (target > 0).
         - Variance: LATE_START if actual_start - scheduled_start > 5 minutes;
