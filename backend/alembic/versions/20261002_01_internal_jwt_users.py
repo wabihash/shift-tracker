@@ -29,10 +29,11 @@ def upgrade() -> None:
             batch.create_foreign_key(f"fk_{table}_user_id_users", "users", ["user_id"], ["id"])
             batch.drop_index(f"ix_{table}_clerk_user_id")
             batch.drop_column("clerk_user_id")
+            if table == "user_profiles":
+                batch.drop_column("wake_time")
+                batch.drop_column("bed_cutoff")
+                batch.drop_column("weekly_break_target_hours")
         op.create_index(f"ix_{table}_user_id", table, ["user_id"], unique=table == "user_profiles")
-        batch.drop_column("wake_time")
-        batch.drop_column("bed_cutoff")
-        batch.drop_column("weekly_break_target_hours")
 
 
 def downgrade() -> None:
