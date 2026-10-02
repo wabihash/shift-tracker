@@ -35,9 +35,9 @@ export const profileSettingsSchema = z.object({
   bed_cutoff: timeStringSchema,
   weekly_target_hours: z
     .number()
-    .min(10, "Weekly target must be at least 10 hours")
-    .max(120, "Weekly target cannot exceed 120 hours"),
-  weekly_break_target_hours: z.number().positive("Weekly break/rest target must be greater than zero").max(168, "Weekly break/rest target cannot exceed 168 hours"),
+    .min(0, "Weekly target cannot be negative")
+    .max(168, "Weekly target cannot exceed 168 hours"),
+  weekly_break_target_hours: z.number().min(0).max(168),
 });
 
 export type ActivityFormValues = z.infer<typeof activitySchema>;

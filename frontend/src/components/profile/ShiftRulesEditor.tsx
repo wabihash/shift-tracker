@@ -1,24 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Clock3, Plus, RotateCcw, Trash2, X } from "lucide-react";  
+import { ArrowDown, ArrowUp, Clock3, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { getProfile, getShiftRules, updateShiftRules } from "../../api/profile";
 import { safeErrorMessage } from "../../api/client";
 import { useAuthToken } from "../../auth/AuthTokenContext";
-import { useToast } from "../common/ToastProvider";
 import { GuardrailCard } from "../common/GuardrailCard";
 import type { ShiftRule, ShiftRuleUpdateInput, UserProfileDetail } from "../../types/schema";
 
 type SlotDraft = { id: number; day_of_week: number; name: string; start: string; end: string; kind: "productive" | "break" };
-const PRESET: Omit<SlotDraft, "id" | "day_of_week">[] = [
-  { name: "Morning Shift", start: "05:41", end: "09:00", kind: "productive" },
-  { name: "Morning Break", start: "09:00", end: "09:30", kind: "break" },
-  { name: "Focus Shift", start: "09:30", end: "13:00", kind: "productive" },
-  { name: "Lunch Break", start: "13:00", end: "14:00", kind: "break" },
-  { name: "Afternoon Shift", start: "14:00", end: "17:30", kind: "productive" },
-  { name: "Rest Break", start: "17:30", end: "18:00", kind: "break" },
-  { name: "Evening Shift", start: "18:00", end: "22:15", kind: "productive" },
-];
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
 type DayName = (typeof DAY_NAMES)[number];
 type CadenceDays = Record<DayName, SlotDraft[]>;
@@ -31,8 +21,8 @@ function toDraft(rule: ShiftRule): SlotDraft {
 }
 
 function updatePayload(slot: SlotDraft, shiftNumber: number): ShiftRuleUpdateInput {
-  const start = slot.start || "05:41";
-  const end = slot.end || "06:11";
+  const start = slot.start || "00:00";
+  const end = slot.end || "01:00";
   return {
     ...(slot.id > 0 ? { id: slot.id } : {}), day_of_week: slot.day_of_week, shift_number: shiftNumber, name: slot.name.trim() || (slot.kind === "break" ? "Break" : `Shift ${shiftNumber}`),
     standard_start: `${start}:00`, standard_end: `${end}:00`, standard_break_minutes: 0,
@@ -43,7 +33,6 @@ function updatePayload(slot: SlotDraft, shiftNumber: number): ShiftRuleUpdateInp
 export function ShiftRulesEditor({ open, onClose }: { open: boolean; onClose: () => void }): ReactElement | null {
   const token = useAuthToken();
   const client = useQueryClient();
-  const { notify } = useToast();
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile, enabled: !!token });
   const [slotsByDay, setSlotsByDay] = useState<CadenceDays>(emptyCadence);
   const [selectedDay, setSelectedDay] = useState(0);
@@ -81,36 +70,20 @@ export function ShiftRulesEditor({ open, onClose }: { open: boolean; onClose: ()
     return totals;
   }, { work: 0, break: 0 }), [daySlots]);
 
-  const warnings = useMemo(() => {
-    const messages: string[] = [];
-    const sorted = [...daySlots].map((slot, index) => ({ slot, index, start: minutes(slot.start), end: minutes(slot.end) })).sort((a, b) => a.start - b.start);
-    sorted.forEach((item, index) => {
-      if (!item.slot.start || !item.slot.end || item.end <= item.start) messages.push(`${item.slot.name || `Slot ${item.index + 1}`} must end after it starts.`);
-      if (index > 0 && item.start < sorted[index - 1]!.end) messages.push(`${item.slot.name || `Slot ${item.index + 1}`} overlaps ${sorted[index - 1]!.slot.name || `slot ${sorted[index - 1]!.index + 1}`}.`);
-      const wake = minutes(timeInput(profile?.wake_time));
-      const bed = minutes(timeInput(profile?.bed_cutoff));
-      if (item.start < wake || item.end > bed || bed <= wake && (item.start < wake || item.end > bed + 1440)) messages.push(`${item.slot.name || `Slot ${item.index + 1}`} falls outside sleep boundaries (${timeInput(profile?.wake_time)}–${timeInput(profile?.bed_cutoff)}).`);
-    });
-    return [...new Set(messages)];
-  }, [daySlots, profile?.wake_time, profile?.bed_cutoff]);
-
-  useEffect(() => {
-    if (open && warnings.some((warning) => warning.includes("overlaps"))) {
-      notify({ type: "warning", title: "Schedule overlap", message: "Custom shift slots overlap. Adjust the times before saving." });
-    }
-  }, [open, warnings, notify]);
+  const warnings = useMemo(() => daySlots
+    .filter((slot) => !slot.start || !slot.end || minutes(slot.end) === minutes(slot.start))
+    .map((slot) => `${slot.name || "Schedule slot"} needs a start and end time.`), [daySlots]);
 
   if (!open) return null;
   const update = (id: number, changes: Partial<SlotDraft>) => setSlotsByDay((current) => ({ ...current, [dayName]: current[dayName].map((slot) => slot.id === id ? { ...slot, ...changes } : slot) }));
   const formattedHours = (value: number) => `${Math.floor(value / 60)}h ${value % 60}m`;
   const addSlot = () => {
-    const previousEnd = daySlots.reduce((latest, slot) => Math.max(latest, minutes(slot.end)), minutes("05:41"));
+    const previousEnd = daySlots.reduce((latest, slot) => Math.max(latest, minutes(slot.end)), 0);
     const start = `${String(Math.floor(previousEnd / 60) % 24).padStart(2, "0")}:${String(previousEnd % 60).padStart(2, "0")}`;
     const endMinute = Math.min(previousEnd + 60, 23 * 60 + 59);
     const end = `${String(Math.floor(endMinute / 60)).padStart(2, "0")}:${String(endMinute % 60).padStart(2, "0")}`;
     setSlotsByDay((current) => ({ ...current, [dayName]: [...current[dayName], { id: -Date.now(), day_of_week: selectedDay, name: "New Shift", start, end, kind: "productive" }] }));
   };
-  const loadPreset = () => setSlotsByDay((current) => ({ ...current, [dayName]: PRESET.map((slot, index) => ({ ...slot, id: daySlots[index]?.id ?? -(index + 1), day_of_week: selectedDay })) }));
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -122,7 +95,6 @@ export function ShiftRulesEditor({ open, onClose }: { open: boolean; onClose: ()
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-5 py-3 sm:px-6">
           <div className="flex flex-wrap gap-1">{DAY_NAMES.map((day, index) => <button type="button" key={day} aria-pressed={selectedDay === index} onClick={() => setSelectedDay(index)} className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${selectedDay === index ? "bg-indigo-500/20 text-indigo-200" : "text-slate-400 hover:bg-slate-800"}`}>{day}</button>)}</div>
           <div className="flex flex-wrap gap-2"><span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200">Productive {formattedHours(stats.work)}</span><span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200">Breaks {formattedHours(stats.break)}</span></div>
-          <button type="button" onClick={loadPreset} className="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/40 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/10"><RotateCcw className="h-3.5 w-3.5"/>Use Recommended Preset</button>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
           {profileQuery.isLoading || rulesQuery.isLoading ? <p className="py-12 text-center text-sm text-slate-400">Loading your schedule...</p> : null}
@@ -139,11 +111,11 @@ export function ShiftRulesEditor({ open, onClose }: { open: boolean; onClose: ()
           {daySlots.length === 0 ? <p className="rounded-lg border border-slate-800 p-4 text-sm text-slate-400">No shifts or breaks configured for this day.</p> : null}
           <button type="button" onClick={addSlot} disabled={Object.values(slotsByDay).reduce((count, day) => count + day.length, 0) >= 224} className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700 px-4 py-3 text-sm font-medium text-slate-300 hover:border-indigo-400 hover:bg-indigo-500/5 disabled:opacity-40"><Plus className="h-4 w-4"/>Add Shift or Break</button>
           <div className="min-h-16 space-y-1">
-            {warnings.length ? warnings.map((warning) => <GuardrailCard key={warning} tone={warning.includes("overlaps") ? "warning" : "sleep"} title={warning.includes("overlaps") ? "Schedule overlap" : "Sleep Boundary Conflict"} message={warning} />) : null}
+            {warnings.length ? warnings.map((warning) => <GuardrailCard key={warning} tone="warning" title="Schedule time required" message={warning} />) : null}
             {saveMutation.error ? <GuardrailCard tone="critical" title="Could not save schedule" message={safeErrorMessage(saveMutation.error, "Review the schedule and try again.")} /> : null}
           </div>
         </div>
-        <footer className="flex justify-end gap-2 border-t border-slate-800 p-4 sm:px-6"><button type="button" onClick={onClose} className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Cancel</button><button type="button" disabled={!profile || profileQuery.isLoading || rulesQuery.isLoading || saveMutation.isPending || warnings.length > 0} onClick={() => { const payload = DAY_NAMES.flatMap((day, dayIndex) => slotsByDay[day].map((slot, index, list) => { const productiveBefore = list.slice(0, index + 1).filter((item) => item.kind === "productive").length; const number = slot.kind === "productive" ? productiveBefore : Math.max(1, list.slice(0, index).filter((item) => item.kind === "productive").length); return updatePayload({ ...slot, day_of_week: dayIndex }, number); })); saveMutation.mutate(payload); }} className="rounded-md bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">{saveMutation.isPending ? "Saving..." : "Save cadence"}</button></footer>
+        <footer className="flex justify-end gap-2 border-t border-slate-800 p-4 sm:px-6"><button type="button" onClick={onClose} className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Cancel</button><button type="button" disabled={profileQuery.isLoading || rulesQuery.isLoading || saveMutation.isPending || warnings.length > 0} onClick={() => { const payload = DAY_NAMES.flatMap((day, dayIndex) => slotsByDay[day].map((slot, index, list) => { const productiveBefore = list.slice(0, index + 1).filter((item) => item.kind === "productive").length; const number = slot.kind === "productive" ? productiveBefore : Math.max(1, list.slice(0, index).filter((item) => item.kind === "productive").length); return updatePayload({ ...slot, day_of_week: dayIndex }, number); })); saveMutation.mutate(payload); }} className="rounded-md bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">{saveMutation.isPending ? "Saving..." : "Save cadence"}</button></footer>
       </section>
     </div>
   );

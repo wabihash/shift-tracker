@@ -1,20 +1,15 @@
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, Moon, type LucideIcon, X } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type PropsWithChildren,
   type ReactElement,
 } from "react";
 
-import { getProfile } from "../../api/profile";
-import { useAuthToken } from "../../auth/AuthTokenContext";
-import { DEFAULT_BED_CUTOFF, DEFAULT_WAKE_TIME } from "../../types/schema";
 import { getSessionSavedCue } from "../../config/cadenceMessages";
 
 export type ToastType = "success" | "warning" | "error" | "info" | "protected";
@@ -35,8 +30,6 @@ interface ToastContextValue {
   dismiss: (id: string) => void;
   sessionSaved: (netMinutes: number, durationMs?: number) => void;
   capWarning: (activityName: string, message?: string) => void;
-  sleepBoundary: (boundary?: "bedtime" | "wake", message?: string) => void;
-  sleepProtected: () => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -66,16 +59,7 @@ const appearance: Record<ToastType, { icon: LucideIcon; classes: string }> = {
 };
 
 export function ToastProvider({ children }: PropsWithChildren): ReactElement {
-  const token = useAuthToken();
-  const profileQuery = useQuery({
-    queryKey: ["profile"],
-    queryFn: getProfile,
-    enabled: !!token,
-  });
-  const wakeTime = profileQuery.data?.wake_time ?? DEFAULT_WAKE_TIME;
-  const bedCutoff = profileQuery.data?.bed_cutoff ?? DEFAULT_BED_CUTOFF;
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const announcedBoundaries = useRef<Set<string>>(new Set());
 
   const dismiss = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -91,17 +75,6 @@ export function ToastProvider({ children }: PropsWithChildren): ReactElement {
     setToasts((current) => [...current, { id, type: "success", title: "Session saved", message: getSessionSavedCue(), durationMs }]);
   }, []);
 
-  const sleepProtected = useCallback(() => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setToasts((current) => [...current, {
-      id,
-      type: "protected",
-      title: "Sleep Boundary",
-      message: `Cannot schedule between ${formatTimeLabel(bedCutoff)} and ${formatTimeLabel(wakeTime)}.`,
-      durationMs: 3000,
-    }]);
-  }, [bedCutoff, wakeTime]);
-
   const capWarning = useCallback((activityName: string, message?: string) => {
     notify({
       type: "warning",
@@ -110,46 +83,9 @@ export function ToastProvider({ children }: PropsWithChildren): ReactElement {
     });
   }, [notify]);
 
-  const sleepBoundary = useCallback((boundary?: "bedtime" | "wake") => {
-    if (boundary === "bedtime") {
-      notify({
-        type: "protected",
-        title: "Bedtime Boundary Reached",
-        message: "Bedtime boundary has been reached. Current work session is protected.",
-      });
-      return;
-    }
-    sleepProtected();
-  }, [notify, sleepProtected]);
-
-  useEffect(() => {
-    const checkSleepBoundary = () => {
-      const now = new Date();
-      const minutes = now.getHours() * 60 + now.getMinutes();
-      const wakeMinutes = parseTimeToMinutes(wakeTime);
-      const bedMinutes = parseTimeToMinutes(bedCutoff);
-      const boundary = minutes === bedMinutes
-        ? "bedtime"
-        : minutes === wakeMinutes
-          ? "wake"
-          : null;
-      if (!boundary) return;
-
-      const localDate = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-      const key = `${localDate}:${boundary}`;
-      if (announcedBoundaries.current.has(key)) return;
-      announcedBoundaries.current.add(key);
-      sleepBoundary(boundary);
-    };
-
-    checkSleepBoundary();
-    const interval = window.setInterval(checkSleepBoundary, 15_000);
-    return () => window.clearInterval(interval);
-  }, [bedCutoff, sleepBoundary, wakeTime]);
-
   const value = useMemo(
-    () => ({ notify, dismiss, sessionSaved, capWarning, sleepBoundary, sleepProtected }),
-    [notify, dismiss, sessionSaved, capWarning, sleepBoundary, sleepProtected],
+    () => ({ notify, dismiss, sessionSaved, capWarning }),
+    [notify, dismiss, sessionSaved, capWarning],
   );
 
   return (
@@ -177,21 +113,6 @@ export function ToastProvider({ children }: PropsWithChildren): ReactElement {
       </div>
     </ToastContext.Provider>
   );
-}
-
-function parseTimeToMinutes(value: string): number {
-  const [hours, minutes] = value.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function formatTimeLabel(value: string): string {
-  const [hours, minutes] = value.split(":").map(Number);
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
 }
 
 function ToastCard({

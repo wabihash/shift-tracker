@@ -48,6 +48,7 @@ export function useShiftEngine(
   const [now, setNow] = useState(() => new Date());
   const updateShiftStatus = useShiftStore((state) => state.updateShiftStatus);
   const storedShiftNumber = useShiftStore((state) => state.currentShiftNumber);
+  const hasConfiguredShifts = rules.some((rule) => rule.slot_type !== "break");
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -55,6 +56,7 @@ export function useShiftEngine(
   }, []);
 
   const current = useMemo(() => {
+    if (!rules.length) return { shift: null, breakWindow: null, shifts: [], breaks: [] };
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
     const days = [new Date(today), new Date(today.getTime() - 86_400_000)];
@@ -101,5 +103,16 @@ export function useShiftEngine(
     });
   }, [current, now, storedShiftNumber, timerKind, timerStatus, updateShiftStatus]);
 
-  return { now, activeShift: current.shift, activeBreak: current.breakWindow, precedingBreakEnd };
+  return {
+    now,
+    currentShift: current.shift,
+    activeShift: current.shift,
+    activeBreak: current.breakWindow,
+    isBreak: Boolean(current.breakWindow),
+    timeRemaining: current.shift
+      ? Math.max(0, Math.ceil((current.shift.scheduledEnd.getTime() - now.getTime()) / 1000))
+      : null,
+    hasConfiguredShifts,
+    precedingBreakEnd,
+  };
 }

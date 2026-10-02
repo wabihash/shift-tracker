@@ -6,8 +6,8 @@ import type {
   UserProfileDetail,
 } from "../types/schema";
 
-export function getProfile(): Promise<UserProfileDetail> {
-  return apiRequest<UserProfileDetail>("/api/profile");
+export function getProfile(): Promise<UserProfileDetail | null> {
+  return apiRequest<UserProfileDetail | null>("/api/profile");
 }
 
 export function getShiftRules(): Promise<Record<string, ShiftRule[]>> {

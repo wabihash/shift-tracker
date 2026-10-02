@@ -15,11 +15,11 @@ export interface RecalculateOptions {
 
 /**
  * Calculates scheduled break hours from shift rules.
- * Default standard fallback is 22.1 hours.
+ * Returns zero when no break rules exist.
  */
 export function calculateScheduledBreakHours(
   rules?: ShiftRule[] | null,
-  fallback = 22.1,
+  fallback = 0,
 ): number {
   if (!rules || rules.length === 0) {
     return fallback;
@@ -38,15 +38,12 @@ export function calculateScheduledBreakHours(
 }
 
 /**
- * Recomputes buffer: round(168.0 - (target + logged_sleep + actual_breaks), 1).
+ * Recomputes buffer from configured weekly target hours.
  */
 export function calculateWeeklyBuffer(
   weeklyTarget: number,
-  loggedSleep: number,
-  actualBreaks: number,
 ): { weeklyBuffer: number; dailyBuffer: number } {
-  const sleepHours = loggedSleep > 0 ? loggedSleep : 49.0;
-  const weeklyBuffer = Math.round((168.0 - (weeklyTarget + sleepHours + actualBreaks)) * 10) / 10;
+  const weeklyBuffer = Math.max(0, Math.round((168.0 - weeklyTarget) * 10) / 10);
   const dailyBuffer = Math.round((weeklyBuffer / 7.0) * 10) / 10;
   return { weeklyBuffer, dailyBuffer };
 }
@@ -138,7 +135,7 @@ export function recalculateWeeklyAnalytics(
     ? current.total_completed_hours
     : Math.round((current.total_completed_hours + netHours) * 100) / 100;
 
-  const weekly_target_goal = current.weekly_target_goal;
+  const weekly_target_goal = options?.activities?.reduce((sum, activity) => sum + activity.weekly_target_hours, 0) || options?.profile?.weekly_target_hours || current.weekly_target_goal;
   const overall_percentage =
     weekly_target_goal > 0
       ? Math.min(100, Math.round((total_completed_hours / weekly_target_goal) * 10000) / 100)
@@ -157,19 +154,7 @@ export function recalculateWeeklyAnalytics(
   const total_late_arrival_min = current.total_late_arrival_min + lateMinutes;
 
   // 5. Recalculate actual break hours and break overrun minutes
-  const standardBreakHours = calculateScheduledBreakHours(
-    options?.profile?.shift_rules,
-    options?.profile?.weekly_break_target_hours ?? 22.1,
-  );
-  const overrunHours = (session.break_overrun_minutes ?? 0) / 60.0;
-  const actual_breaks = standardBreakHours + overrunHours;
-
-  // 6. Recompute buffer: round(168.0 - (target + logged_sleep + actual_breaks), 1)
-  const { weeklyBuffer, dailyBuffer } = calculateWeeklyBuffer(
-    weekly_target_goal,
-    logged_sleep_hours,
-    actual_breaks,
-  );
+  const { weeklyBuffer, dailyBuffer } = calculateWeeklyBuffer(weekly_target_goal);
 
   return {
     weekly_target_goal,

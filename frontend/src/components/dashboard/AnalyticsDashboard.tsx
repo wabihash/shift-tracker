@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { endOfWeek, format, startOfWeek } from "date-fns";
-import { AlertCircle, CalendarRange, Loader2 } from "lucide-react";
+import { AlertCircle, CalendarRange, Loader2, Play, ClockPlus, Timer } from "lucide-react";
 import { useMemo, useState, type ReactElement } from "react";
 
 import { getActivities } from "../../api/activities";
@@ -9,7 +9,6 @@ import { getProfile } from "../../api/profile";
 import { getSessions } from "../../api/sessions";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import type { DateString } from "../../types/schema";
-import { DEFAULT_BED_CUTOFF, DEFAULT_WAKE_TIME } from "../../types/schema";
 import { ActivityBurndownChart } from "../analytics/ActivityBurndownChart";
 import { CapAlertBanner } from "../analytics/CapAlertBanner";
 import { TimeLossLedger } from "../analytics/TimeLossLedger";
@@ -17,6 +16,11 @@ import { HistoricalSummaryTable } from "../analytics/HistoricalSummaryTable";
 import { WeeklyProgressCard } from "../analytics/WeeklyProgressCard";
 import { BurndownChartSkeleton, WeeklyCardSkeleton } from "../common/SkeletonLoaders";
 import { safeErrorMessage } from "../../api/client";
+
+interface AnalyticsDashboardProps {
+  onStartStopwatch?: () => void;
+  onLogPastSession?: () => void;
+}
 
 function toDateString(date: Date): DateString {
   return format(date, "yyyy-MM-dd");
@@ -30,7 +34,7 @@ function getDefaultWeekRange(): { start: DateString; end: DateString } {
   };
 }
 
-export function AnalyticsDashboard(): ReactElement {
+export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: AnalyticsDashboardProps): ReactElement {
   const token = useAuthToken();
   const defaultWeek = useMemo(() => getDefaultWeekRange(), []);
   const [weekStart, setWeekStart] = useState<DateString>(defaultWeek.start);
@@ -89,12 +93,17 @@ export function AnalyticsDashboard(): ReactElement {
     "Unable to load analytics dashboard.";
 
   const analytics = analyticsQuery.data;
-  const weeklyTarget =
-    analytics?.weekly_target_goal ??
-    profileQuery.data?.weekly_target_hours ??
-    68;
+  const activityTarget = (activitiesQuery.data ?? []).reduce((sum, activity) => sum + activity.weekly_target_hours, 0);
+  const weeklyTarget = activityTarget > 0 ? activityTarget : (profileQuery.data?.weekly_target_hours ?? 0);
   const sleepActivity = activitiesQuery.data?.find((activity) => activity.name.trim().toLowerCase() === "sleep");
-  const productiveSessions = (sessionsQuery.data ?? []).filter((session) => session.activity_id !== sleepActivity?.id);
+  const trackedSessions = sessionsQuery.data ?? [];
+  const completedHours = trackedSessions.reduce((sum, session) => sum + session.net_minutes / 60, 0);
+  const loggedSleepHours = sleepActivity
+    ? trackedSessions.filter((session) => session.activity_id === sleepActivity.id).reduce((sum, session) => sum + session.net_minutes / 60, 0)
+    : 0;
+  const overallPercentage = weeklyTarget > 0 ? Math.min(100, completedHours / weeklyTarget * 100) : 0;
+  const activeWeekHasSessions = (sessionsQuery.data ?? []).length > 0;
+  const isNewUser = !profileQuery.data?.weekly_target_hours || ((activitiesQuery.data?.length ?? 0) === 0 && !activeWeekHasSessions);
 
   return (
     <section className="space-y-4">
@@ -169,19 +178,20 @@ export function AnalyticsDashboard(): ReactElement {
         </div>
       ) : view === "week" ? (
         <>
+          {!activeWeekHasSessions || isNewUser ? <GettingStartedCard onStartStopwatch={onStartStopwatch} onLogPastSession={onLogPastSession} /> : null}
           <div className="grid gap-4 xl:grid-cols-2">
             <WeeklyProgressCard
               weeklyTarget={weeklyTarget}
-              completedHours={analytics?.total_completed_hours ?? 0}
-              overallPercentage={analytics?.overall_percentage ?? 0}
+              completedHours={completedHours}
+              overallPercentage={overallPercentage}
               weekEnd={weekEnd}
-              wakeTime={profileQuery.data?.wake_time ?? DEFAULT_WAKE_TIME}
-              bedCutoff={profileQuery.data?.bed_cutoff ?? DEFAULT_BED_CUTOFF}
-              sessions={productiveSessions}
-              weeklyBuffer={analytics?.weekly_buffer ?? 0}
-              dailyBuffer={analytics?.daily_buffer ?? 0}
-              loggedSleepHours={analytics?.logged_sleep_hours ?? 0}
-              sleepTargetHours={analytics?.metrics.find((metric) => metric.name.trim().toLowerCase() === "sleep")?.target_hours ?? 49}
+              sessions={trackedSessions}
+              weeklyBuffer={Math.max(0, 168 - weeklyTarget)}
+              dailyBuffer={Math.round((Math.max(0, 168 - weeklyTarget) / 7) * 10) / 10}
+              loggedSleepHours={loggedSleepHours}
+              sleepTargetHours={analytics?.metrics.find((metric) => metric.name.trim().toLowerCase() === "sleep")?.target_hours ?? 0}
+              hasTrackedSessions={activeWeekHasSessions}
+              showSleepMetric={Boolean(sleepActivity && sleepActivity.weekly_target_hours > 0)}
             />
             <CapAlertBanner
               capAlerts={analytics?.cap_alerts ?? []}
@@ -202,4 +212,25 @@ export function AnalyticsDashboard(): ReactElement {
       ) : null}
     </section>
   );
+}
+
+function GettingStartedCard({ onStartStopwatch, onLogPastSession }: AnalyticsDashboardProps): ReactElement {
+  const steps = [
+    ["1. Set Your Target", "Choose a weekly focus target in Settings or set quotas for your activities."],
+    ["2. Run Focus Sessions", "Use the Live Stopwatch to track deep work blocks."],
+    ["3. Review Your Buffer", "Check your weekly pacing and available time as sessions accumulate."],
+  ];
+
+  return <article className="rounded-xl border border-indigo-500/25 bg-slate-900/90 p-5 sm:p-6">
+    <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-200"><Timer className="h-4 w-4" aria-hidden />⏱️ Getting Started</div>
+    <h3 className="text-xl font-semibold text-slate-50">Welcome to Shift Tracker</h3>
+    <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">You haven't logged any shifts yet this week. Set your weekly targets and record your first focus block to see your pacing and buffer.</p>
+    <div className="mt-5 grid gap-3 md:grid-cols-3">
+      {steps.map(([title, description]) => <div key={title} className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"><h4 className="text-sm font-semibold text-slate-100">{title}</h4><p className="mt-1 text-xs leading-relaxed text-slate-400">{description}</p></div>)}
+    </div>
+    <div className="mt-5 flex flex-wrap gap-2">
+      <button type="button" onClick={onStartStopwatch} className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"><Play className="h-4 w-4" aria-hidden />Start Stopwatch</button>
+      <button type="button" onClick={onLogPastSession} className="inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700"><ClockPlus className="h-4 w-4" aria-hidden />Log Past Session</button>
+    </div>
+  </article>;
 }

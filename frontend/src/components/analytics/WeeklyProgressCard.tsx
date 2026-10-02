@@ -1,5 +1,5 @@
-import { Moon, Sparkles, Target, TrendingUp } from "lucide-react";
-import { useMemo, type ReactElement } from "react";
+import { Sparkles, Target, TrendingUp } from "lucide-react";
+import type { ReactElement } from "react";
 
 import type { DateString, SessionLog, TimeString } from "../../types/schema";
 import { getMilestoneMessage } from "../../config/cadenceMessages";
@@ -9,49 +9,15 @@ export interface WeeklyProgressCardProps {
   completedHours: number;
   overallPercentage: number;
   weekEnd: DateString;
-  wakeTime: TimeString;
-  bedCutoff: TimeString;
+  wakeTime?: TimeString;
+  bedCutoff?: TimeString;
   sessions: SessionLog[];
   weeklyBuffer: number;
   dailyBuffer: number;
   loggedSleepHours: number;
   sleepTargetHours: number;
-}
-
-function parseTimeToMinutes(value: TimeString): number {
-  const parts = value.split(":");
-  return Number(parts[0] ?? 0) * 60 + Number(parts[1] ?? 0);
-}
-
-function isInSleepWindow(date: Date, wakeMinutes: number, bedMinutes: number): boolean {
-  const slotMinutes = date.getHours() * 60 + date.getMinutes();
-  if (wakeMinutes < bedMinutes) {
-    return slotMinutes >= bedMinutes || slotMinutes < wakeMinutes;
-  }
-  return slotMinutes >= bedMinutes && slotMinutes < wakeMinutes;
-}
-
-function computeBedtimeCompliance(
-  sessions: SessionLog[],
-  wakeTime: TimeString,
-  bedCutoff: TimeString,
-): number {
-  if (sessions.length === 0) {
-    return 100;
-  }
-
-  const wakeMinutes = parseTimeToMinutes(wakeTime);
-  const bedMinutes = parseTimeToMinutes(bedCutoff);
-  const compliantCount = sessions.filter((session) => {
-    const start = new Date(session.actual_start);
-    const end = new Date(session.actual_end);
-    return (
-      !isInSleepWindow(start, wakeMinutes, bedMinutes) &&
-      !isInSleepWindow(end, wakeMinutes, bedMinutes)
-    );
-  }).length;
-
-  return Math.round((compliantCount / sessions.length) * 100);
+  hasTrackedSessions?: boolean;
+  showSleepMetric?: boolean;
 }
 
 function remainingDaysInWeek(weekEnd: DateString): number {
@@ -67,31 +33,20 @@ export function WeeklyProgressCard({
   completedHours,
   overallPercentage,
   weekEnd,
-  wakeTime,
-  bedCutoff,
   sessions,
   weeklyBuffer,
   dailyBuffer,
   loggedSleepHours,
   sleepTargetHours,
+  hasTrackedSessions = true,
+  showSleepMetric = false,
 }: WeeklyProgressCardProps): ReactElement {
-  const safeTarget = weeklyTarget > 0 ? weeklyTarget : 68;
-  const progressRatio = Math.min(1, completedHours / safeTarget);
+  const safeTarget = weeklyTarget;
+  const progressRatio = safeTarget > 0 ? Math.min(1, completedHours / safeTarget) : 0;
   const hoursRemaining = Math.max(0, safeTarget - completedHours);
   const daysRemaining = remainingDaysInWeek(weekEnd);
-  const pacePerDay = hoursRemaining / daysRemaining;
+  const pacePerDay = weeklyTarget > 0 ? Math.max(0, hoursRemaining / daysRemaining) : 0;
 
-  const bedtimeCompliance = useMemo(
-    () => computeBedtimeCompliance(sessions, wakeTime, bedCutoff),
-    [sessions, wakeTime, bedCutoff],
-  );
-
-  const defenseLabel =
-    bedtimeCompliance >= 90
-      ? "Strong sleep boundary defense"
-      : bedtimeCompliance >= 70
-        ? "Moderate boundary pressure"
-        : "Sleep boundary at risk";
   const milestone = getMilestoneMessage(overallPercentage);
 
   return (
@@ -108,7 +63,7 @@ export function WeeklyProgressCard({
         <div className="flex flex-col items-end gap-1">
           <span className="inline-flex h-7 items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 text-xs font-semibold text-indigo-200">
             <Target className="h-3.5 w-3.5" aria-hidden />
-            {overallPercentage.toFixed(1)}% complete
+            {hasTrackedSessions ? `${overallPercentage.toFixed(1)}% complete` : "No data yet"}
           </span>
           <div className="flex h-6 max-w-[min(26rem,65vw)] items-center gap-1 overflow-hidden text-right text-[11px] text-slate-400" title={milestone ?? undefined}>
             {milestone ? <><Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden /><span className="truncate">{milestone}</span></> : null}
@@ -120,7 +75,7 @@ export function WeeklyProgressCard({
         className="mb-4 h-3 overflow-hidden rounded-full bg-slate-800"
         role="progressbar"
         aria-valuemin={0}
-        aria-valuemax={safeTarget}
+        aria-valuemax={safeTarget || 1}
         aria-valuenow={completedHours}
         aria-label="Weekly hours completed"
       >
@@ -133,9 +88,9 @@ export function WeeklyProgressCard({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 sm:col-span-2">
           <p className="text-xs uppercase tracking-wide text-violet-200">Your Weekly Buffer</p>
-          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyBuffer.toFixed(1)} hrs</p>
-          <p className="mt-1 text-xs text-slate-400">Daily Average Buffer: {dailyBuffer.toFixed(1)} hrs/day</p>
-          <p className="mt-2 border-t border-violet-500/15 pt-2 text-sm text-violet-100">Sleep: {loggedSleepHours.toFixed(1)} / {sleepTargetHours.toFixed(1)} hrs</p>
+          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyTarget <= 0 ? "— hrs" : `${weeklyBuffer.toFixed(1)} hrs`}</p>
+          <p className="mt-1 text-xs text-slate-400">{weeklyTarget <= 0 ? "Set your weekly target to calculate your buffer margin." : `Daily Average Buffer: ${dailyBuffer.toFixed(1)} hrs/day`}</p>
+          {showSleepMetric && sleepTargetHours > 0 ? <p className="mt-2 border-t border-violet-500/15 pt-2 text-sm text-violet-100">Sleep: {loggedSleepHours.toFixed(1)} / {sleepTargetHours.toFixed(1)} hrs</p> : null}
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
           <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-wide text-slate-400">
@@ -143,21 +98,13 @@ export function WeeklyProgressCard({
             Required Pace
           </p>
           <p className="font-mono text-lg text-slate-100">
-            {pacePerDay.toFixed(1)}h/day
+            {weeklyTarget > 0 ? `${pacePerDay.toFixed(1)} h/day` : "0.0 h/day"}
           </p>
           <p className="text-xs text-slate-500">
             {daysRemaining} day(s) left this week
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-          <p className="mb-1 inline-flex items-center gap-1 text-xs uppercase tracking-wide text-slate-400">
-            <Moon className="h-3.5 w-3.5" aria-hidden />
-            Bedtime Compliance
-          </p>
-          <p className="font-mono text-lg text-slate-100">{bedtimeCompliance}%</p>
-          <p className="text-xs text-slate-500">{defenseLabel}</p>
-        </div>
       </div>
     </article>
   );

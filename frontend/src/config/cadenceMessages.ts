@@ -2,9 +2,9 @@ export type CadenceDay = "regular" | "wednesday" | "friday" | "sunday";
 
 export const CADENCE_MESSAGES: Record<CadenceDay, string> = {
   regular: "Execute precisely. Track time, honor caps, ship outcomes.",
-  wednesday: "Wednesday cadence: Hard stop 8 PM. Protect evening recovery.",
+  wednesday: "Track your work and take breaks when you need them.",
   friday: "Deep Focus Protocol: High intensity, full break buffers.",
-  sunday: "Finish by 5:15 PM. Guard your 4h inactive evening recharge.",
+  sunday: "Plan your week on your terms.",
 };
 
 export const RUNNING_FOCUS_CUES = [
@@ -29,7 +29,7 @@ export function getSessionSavedCue(index = Math.floor(Math.random() * SESSION_SA
 }
 
 export function getMilestoneMessage(percent: number): string | null {
-  if (percent >= 100) return "68h Core Achieved. Master-level execution. Enter recovery mode.";
+  if (percent >= 100) return "Weekly target achieved. Nice work.";
   if (percent >= 75) return "Final stretch. Maintain form through the finish.";
   if (percent >= 50) return "Halfway marker cleared. Energy management is working.";
   if (percent >= 25) return "Strong opening phase. Pace is locked.";

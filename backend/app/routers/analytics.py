@@ -10,8 +10,7 @@ from sqlmodel import Session, select
 from app.auth import get_current_user
 from app.db import get_session
 from app.models import Activity, SessionLog, ShiftRule, VarianceType
-from app.routers.activities import ensure_sleep_activity
-from app.routers.profile import get_or_create_profile
+from app.routers.profile import _load_profile
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -83,8 +82,7 @@ def get_history_summary(
     clerk_user_id: Annotated[str, Depends(get_current_user)],
     group_by: Annotated[str, Query(pattern="^(week|month)$")],
 ) -> HistorySummaryResponse:
-    profile = get_or_create_profile(session, clerk_user_id)
-    sleep_activity = ensure_sleep_activity(session, profile)
+    profile = _load_profile(session, clerk_user_id)
     logs = list(session.exec(
         select(SessionLog)
         .where(SessionLog.clerk_user_id == clerk_user_id)
@@ -99,11 +97,12 @@ def get_history_summary(
         groups.setdefault(period_start, []).append(log)
 
     rows: list[HistorySummaryRow] = []
+    activities = list(session.exec(select(Activity).join(UserProfile, Activity.profile_id == UserProfile.id).where(UserProfile.clerk_user_id == clerk_user_id)).all())
     for period_start, period_logs in sorted(groups.items(), reverse=True):
-        sleep_logs = [log for log in period_logs if log.activity_id == sleep_activity.id]
-        logged_hours = sum(log.net_minutes for log in period_logs if log.activity_id != sleep_activity.id) / 60.0
-        logged_sleep_hours = sum(log.net_minutes for log in sleep_logs) / 60.0 if sleep_logs else 49.0
-        target = profile.weekly_target_hours
+        sleep_logs = []
+        logged_hours = sum(log.net_minutes for log in period_logs) / 60.0
+        logged_sleep_hours = 0.0
+        target = profile.weekly_target_hours if profile else 0.0
         if group_by == "month":
             next_month = date(period_start.year + (1 if period_start.month == 12 else 0), period_start.month % 12 + 1, 1)
             target *= (next_month - period_start).days / 7
@@ -121,34 +120,20 @@ def get_history_summary(
             total_deducted_minutes=sum(log.deducted_minutes for log in period_logs),
             late_arrival_minutes=sum(log.variance_minutes for log in period_logs if log.variance_type == VarianceType.LATE_START),
             logged_sleep_hours=round(sum(log.net_minutes for log in sleep_logs) / 60.0, 2),
-            weekly_buffer=_weekly_buffer(profile.weekly_target_hours, logged_sleep_hours, profile.shift_rules, group_by == "month" and bool(sleep_logs), (next_month - period_start).days if group_by == "month" else 7),
-            daily_buffer=round(_weekly_buffer(profile.weekly_target_hours, logged_sleep_hours, profile.shift_rules, group_by == "month" and bool(sleep_logs), (next_month - period_start).days if group_by == "month" else 7) / 7.0, 1),
+            weekly_buffer=_weekly_buffer(target, logged_sleep_hours, profile.shift_rules if profile else [], False),
+            daily_buffer=round(_weekly_buffer(target, logged_sleep_hours, profile.shift_rules if profile else [], False) / 7.0, 1),
         ))
     today = date.today()
     current_start = today - timedelta(days=today.weekday())
     current_end = current_start + timedelta(days=6)
-    current_logs = list(session.exec(select(SessionLog).where(SessionLog.clerk_user_id == clerk_user_id, SessionLog.logged_date >= current_start, SessionLog.logged_date <= current_end)).all())
-    current_sleep_logs = [log for log in current_logs if log.activity_id == sleep_activity.id]
-    current_sleep_hours = sum(log.net_minutes for log in current_sleep_logs) / 60.0 if current_sleep_logs else 49.0
-    weekly_buffer = _weekly_buffer(profile.weekly_target_hours, current_sleep_hours, profile.shift_rules)
+    current_sleep_hours = 0.0
+    weekly_target = profile.weekly_target_hours if profile else 0.0
+    weekly_buffer = _weekly_buffer(weekly_target, current_sleep_hours, profile.shift_rules if profile else [])
     return HistorySummaryResponse(group_by=group_by, rows=rows, weekly_buffer=weekly_buffer, daily_buffer=round(weekly_buffer / 7.0, 1))
 
 
 def _weekly_buffer(weekly_target: float, sleep_hours: float, rules: list[ShiftRule], monthly: bool = False, period_days: int = 30) -> float:
-    if monthly:
-        sleep_hours /= period_days / 7.0
-    if sleep_hours <= 0:
-        sleep_hours = 49.0
-    break_minutes = 0
-    for rule in rules:
-        if rule.slot_type != "break":
-            continue
-        start = rule.slot_start or rule.standard_start
-        end = rule.slot_end or rule.standard_end
-        start_min = start.hour * 60 + start.minute
-        end_min = end.hour * 60 + end.minute
-        break_minutes += (end_min - start_min) % 1440
-    return round(168.0 - (weekly_target + sleep_hours + break_minutes / 60.0), 1)
+    return max(0.0, round(168.0 - weekly_target, 1))
 
 
 @router.get("/weekly", response_model=WeeklyAnalyticsResponse)
@@ -164,13 +149,12 @@ def get_weekly_analytics(
             detail="week_end must be on or after week_start",
         )
 
-    profile = get_or_create_profile(session, clerk_user_id)
-    sleep_activity = ensure_sleep_activity(session, profile)
+    profile = _load_profile(session, clerk_user_id)
 
     activities = list(
         session.exec(
             select(Activity)
-            .where(Activity.profile_id == profile.id)
+            .where(Activity.profile_id == profile.id if profile else Activity.id == -1)
             .order_by(Activity.name)
         ).all()
     )
@@ -189,11 +173,12 @@ def get_weekly_analytics(
     for log in sessions:
         sessions_by_activity.setdefault(log.activity_id, []).append(log)
 
-    total_net_minutes = sum(log.net_minutes for log in sessions if log.activity_id != sleep_activity.id)
+    total_net_minutes = sum(log.net_minutes for log in sessions)
     total_net_hours = total_net_minutes / 60.0
-    sleep_logs = [log for log in sessions if log.activity_id == sleep_activity.id]
-    logged_sleep_hours = sum(log.net_minutes for log in sleep_logs) / 60.0 if sleep_logs else 49.0
-    weekly_target = profile.weekly_target_hours
+    sleep_logs: list[SessionLog] = []
+    logged_sleep_hours = 0.0
+    activity_target = sum(activity.weekly_target_hours for activity in activities)
+    weekly_target = activity_target if activity_target > 0 else (profile.weekly_target_hours if profile else 0.0)
     overall_completion = (
         min(100.0, (total_net_hours / weekly_target) * 100.0)
         if weekly_target > 0
@@ -229,7 +214,7 @@ def get_weekly_analytics(
         )
         activity_stats.append(stats)
 
-        if is_cap_reached and activity.id != sleep_activity.id:
+        if is_cap_reached:
             cap_alerts.append(
                 CapAlert(
                     activity_id=activity.id,
@@ -257,7 +242,7 @@ def get_weekly_analytics(
             total_lost_deductions_min=total_lost_deductions_min,
             total_late_arrival_min=total_late_arrival_min,
         ),
-        weekly_buffer=_weekly_buffer(profile.weekly_target_hours, logged_sleep_hours, profile.shift_rules),
-        daily_buffer=round(_weekly_buffer(profile.weekly_target_hours, logged_sleep_hours, profile.shift_rules) / 7.0, 1),
-        logged_sleep_hours=round(sum(log.net_minutes for log in sleep_logs) / 60.0, 2),
+        weekly_buffer=max(0.0, round(168.0 - weekly_target, 1)),
+        daily_buffer=round(max(0.0, 168.0 - weekly_target) / 7.0, 1),
+        logged_sleep_hours=0.0,
     )

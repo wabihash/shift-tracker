@@ -9,7 +9,7 @@ from sqlmodel import Session, delete, select
 from app.auth import get_current_user
 from app.db import get_session
 from app.models import Activity, PlannedShift, SessionLog, UserProfile
-from app.routers.profile import get_or_create_profile
+from app.routers.profile import create_empty_profile
 
 router = APIRouter(prefix="/api", tags=["activities"])
 
@@ -56,33 +56,14 @@ def _get_owned_activity(
     return activity
 
 
-def ensure_sleep_activity(session: Session, profile: UserProfile) -> Activity:
-    sleep = session.exec(
-        select(Activity).where(
-            Activity.profile_id == profile.id,
-            Activity.name.ilike("sleep"),
-        )
-    ).first()
-    if sleep is None:
-        sleep = Activity(
-            profile_id=profile.id,
-            name="Sleep",
-            weekly_target_hours=49.0,
-            color="#8b5cf6",
-        )
-        session.add(sleep)
-        session.commit()
-        session.refresh(sleep)
-    return sleep
-
-
 @router.get("/activities", response_model=list[ActivityRead])
 def list_activities(
     session: Annotated[Session, Depends(get_session)],
     clerk_user_id: Annotated[str, Depends(get_current_user)],
 ) -> list[Activity]:
-    profile = get_or_create_profile(session, clerk_user_id)
-    ensure_sleep_activity(session, profile)
+    profile = session.exec(select(UserProfile).where(UserProfile.clerk_user_id == clerk_user_id)).first()
+    if profile is None:
+        return []
     statement = (
         select(Activity)
         .where(Activity.profile_id == profile.id)
@@ -97,7 +78,7 @@ def create_activity(
     session: Annotated[Session, Depends(get_session)],
     clerk_user_id: Annotated[str, Depends(get_current_user)],
 ) -> Activity:
-    profile = get_or_create_profile(session, clerk_user_id)
+    profile = create_empty_profile(session, clerk_user_id)
     activity = Activity(
         profile_id=profile.id,
         name=body.name.strip(),

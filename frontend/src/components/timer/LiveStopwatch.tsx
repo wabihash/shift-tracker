@@ -12,7 +12,7 @@ import { getActivities } from "../../api/activities";
 import { getProfile } from "../../api/profile";
 import { submitOrQueueSession } from "../../services/sessionSubmission";
 import { useAuthToken } from "../../auth/AuthTokenContext";
-import { useShiftEngine, getBedtimeBoundary } from "../../hooks/useShiftEngine";
+import { useShiftEngine } from "../../hooks/useShiftEngine";
 import { useToast } from "../common/ToastProvider";
 import { getCadenceMessage, getRunningFocusCue } from "../../config/cadenceMessages";
 import { useShiftStore } from "../../stores/useShiftStore";
@@ -81,7 +81,6 @@ export function LiveStopwatch({
   );
   const [accentGlow, setAccentGlow] = useState(false);
 
-  const bedtimeCommitRef = useRef<string | null>(null);
   const previousStartRequest = useRef(startRequest);
   const previousManualRequest = useRef(manualSessionRequest);
 
@@ -114,7 +113,7 @@ export function LiveStopwatch({
 
   const canStart =
     typeof selectedActivityId === "number" &&
-    !!activeShift &&
+    (shiftEngine.hasConfiguredShifts ? !!activeShift : true) &&
     status === "idle" &&
     !deductionOpen;
 
@@ -125,15 +124,14 @@ export function LiveStopwatch({
     const start = shiftEngine.now;
     const cutoff = shiftEngine.precedingBreakEnd;
     const breakOverrunMinutes = cutoff && start > cutoff ? Math.floor((start.getTime() - cutoff.getTime()) / 60_000) : 0;
-    const bedBoundary = getBedtimeBoundary(start, profileQuery.data?.bed_cutoff ?? "22:15");
     startTimer(selectedActivityId, null, {
       shiftNumber: activeShift?.rule.shift_number ?? runningShiftNumber,
       scheduledStartIso: activeShift?.scheduledStart.toISOString() ?? null,
       scheduledEndIso: activeShift?.scheduledEnd.toISOString() ?? null,
       breakOverrunMinutes,
-      bedtimeLimitIso: bedBoundary.toISOString(),
+      bedtimeLimitIso: null,
     });
-  }, [activeShift, profileQuery.data?.bed_cutoff, runningShiftNumber, selectedActivityId, shiftEngine.now, shiftEngine.precedingBreakEnd, startTimer]);
+  }, [activeShift, runningShiftNumber, selectedActivityId, shiftEngine.now, shiftEngine.precedingBreakEnd, startTimer]);
 
   useEffect(() => {
     if (previousStartRequest.current === startRequest) return;
@@ -143,8 +141,10 @@ export function LiveStopwatch({
     } else if (status === "idle") {
       notify({
         type: "info",
-        title: "Choose an activity first",
-        message: "Select an activity in the Planner view, then start the stopwatch.",
+        title: typeof selectedActivityId !== "number" ? "Choose an activity first" : "Ready to focus",
+        message: typeof selectedActivityId !== "number"
+          ? "Select or create an activity in the Activities view, then start the stopwatch."
+          : "Select a shift window in Configure Shifts to enable starting the stopwatch.",
       });
     }
   }, [canStart, handleStart, notify, startRequest, status]);
@@ -154,75 +154,6 @@ export function LiveStopwatch({
     previousManualRequest.current = manualSessionRequest;
     setManualSessionOpen(true);
   }, [manualSessionRequest]);
-
-  useEffect(() => {
-    if ((status !== "running" && status !== "paused") || timerKind !== "work" || !activeActivityId) return;
-    const state = useTimerStore.getState();
-    const autoActivityId = state.activeActivityId;
-    const actualStart = state.actualStartIso ? new Date(state.actualStartIso) : null;
-    if (!actualStart || !autoActivityId) return;
-    const bedtimeBoundary = state.bedtimeLimitIso
-      ? new Date(state.bedtimeLimitIso)
-      : getBedtimeBoundary(actualStart, profileQuery.data?.bed_cutoff ?? "22:15");
-    const boundary = shiftEngine.now >= bedtimeBoundary ? bedtimeBoundary : null;
-    if (!boundary || bedtimeCommitRef.current === `${actualStart.toISOString()}|${boundary.toISOString()}`) return;
-    bedtimeCommitRef.current = `${actualStart.toISOString()}|${boundary.toISOString()}`;
-    const grossSeconds = Math.min(selectElapsedSeconds(state), Math.max(0, (boundary.getTime() - actualStart.getTime()) / 1000));
-    const grossMinutes = Math.floor(grossSeconds / 60);
-    const boundaryIso = boundary.toISOString();
-    const capture: SessionCapture = {
-      grossSeconds,
-      actualStartIso: actualStart.toISOString(),
-      actualEndIso: boundaryIso,
-      activityId: autoActivityId,
-      plannedShiftId: state.plannedShiftId,
-      shiftNumber: state.shiftNumber,
-      scheduledStart: state.scheduledStartIso,
-      scheduledEnd: state.scheduledEndIso,
-      breakOverrunMinutes: state.breakOverrunMinutes,
-    };
-    stopTimer();
-    if (grossMinutes <= 0) {
-      resetTimer();
-      return;
-    }
-    void submitOrQueueSession(
-      {
-        activity_id: capture.activityId,
-        shift_number: capture.shiftNumber,
-        planned_shift_id: capture.plannedShiftId,
-        actual_start: capture.actualStartIso,
-        actual_end: boundaryIso,
-        scheduled_start: capture.scheduledStart,
-        scheduled_end: capture.scheduledEnd,
-        gross_minutes: grossMinutes,
-        deducted_minutes: 0,
-        break_overrun_minutes: capture.breakOverrunMinutes,
-        notes: "Automatically stopped and saved at bedtime boundary.",
-        logged_date: boundaryIso.slice(0, 10),
-      },
-      queryClient,
-      {
-        profile: profileQuery.data,
-        activities: activitiesQuery.data,
-      },
-    ).then((result) => {
-      if (result.isOffline) {
-        notify({
-          type: "info",
-          title: "Offline Session",
-          message: "Saved locally (Offline). Weekly analytics updated.",
-        });
-      } else {
-        sessionSaved(grossMinutes);
-      }
-      resetTimer();
-    }).catch((error: Error) => {
-      setSessionCapture(capture);
-      setDeductionOpen(true);
-      notify({ type: "error", title: "Bedtime save failed", message: error.message || "Review and save the stopped session." });
-    });
-  }, [activeActivityId, activitiesQuery.data, notify, profileQuery.data, profileQuery.data?.bed_cutoff, queryClient, resetTimer, sessionSaved, shiftEngine.now, status, stopTimer, timerKind]);
 
   const handleStop = () => {
     const state = useTimerStore.getState();
@@ -283,6 +214,7 @@ export function LiveStopwatch({
         </select>
 
         <p className="mt-3 text-xs text-slate-400">{runningShiftNumber ? `Active Shift ${runningShiftNumber}` : "No active shift window"}</p>
+        {!shiftEngine.hasConfiguredShifts ? <p className="mt-1 text-xs text-indigo-300">No shift windows configured. Starting now will track an unscheduled focus session.</p> : null}
       </div>
 
       <div className={`rounded-xl border p-6 text-center transition-all duration-500 ${accentGlow ? "border-emerald-500/50 shadow-emerald-500/10 shadow-lg" : "border-indigo-500/30 bg-indigo-500/5"}`}>

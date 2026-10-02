@@ -13,10 +13,6 @@ import { getActivities } from "../../api/activities";
 import { getProfile } from "../../api/profile";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import { submitOrQueueSession } from "../../services/sessionSubmission";
-import {
-  DEFAULT_BED_CUTOFF,
-  DEFAULT_WAKE_TIME,
-} from "../../types/schema";
 import { useToast } from "../common/ToastProvider";
 import { safeErrorMessage } from "../../api/client";
 import { GuardrailCard } from "../common/GuardrailCard";
@@ -67,7 +63,7 @@ export function ManualSessionModal({
 }: ManualSessionModalProps): ReactElement | null {
   const token = useAuthToken();
   const queryClient = useQueryClient();
-  const { sessionSaved, sleepBoundary, sleepProtected, notify } = useToast();
+  const { sessionSaved, notify } = useToast();
   const dialogRef = useRef<HTMLDivElement>(null);
   const activityRef = useRef<HTMLSelectElement>(null);
   const [activityId, setActivityId] = useState("");
@@ -83,16 +79,12 @@ export function ManualSessionModal({
     queryFn: getProfile,
     enabled: !!token,
   });
-  const wakeTime = profileQuery.data?.wake_time ?? DEFAULT_WAKE_TIME;
-  const bedCutoff = profileQuery.data?.bed_cutoff ?? DEFAULT_BED_CUTOFF;
 
   const activitiesQuery = useQuery({
     queryKey: ["activities"],
     queryFn: getActivities,
     enabled: isOpen && !!token,
   });
-  const selectedActivity = activitiesQuery.data?.find((activity) => activity.id === Number(activityId));
-  const isSleepActivity = selectedActivity?.name.trim().toLowerCase() === "sleep";
 
   const parsedDeduction = deductionInput.trim() === "" ? 0 : Number(deductionInput);
   const deductionIsValid =
@@ -112,19 +104,6 @@ export function ManualSessionModal({
     ? endTime < startTime ? 1440 - startMinuteOfDay + endMinuteOfDay : endMinuteOfDay - startMinuteOfDay
     : 0;
   const netMinutes = Math.max(0, grossMinutes - (deductionIsValid ? parsedDeduction : 0));
-
-  const crossesSleepBoundary = useMemo(() => {
-    if (isSleepActivity) return false;
-    if (!actualStart || !actualEnd || actualEnd <= actualStart) return false;
-    const startMinute = actualStart.getHours() * 60 + actualStart.getMinutes();
-    const endMinute = actualEnd.getHours() * 60 + actualEnd.getMinutes();
-    const [wakeHour, wakeMinute] = wakeTime.split(":").map(Number);
-    const [bedHour, bedMinute] = bedCutoff.split(":").map(Number);
-    return (
-      startMinute < wakeHour * 60 + wakeMinute ||
-      endMinute > bedHour * 60 + bedMinute
-    );
-  }, [actualEnd, actualStart, bedCutoff, isSleepActivity, wakeTime]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -225,16 +204,6 @@ export function ManualSessionModal({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
-    if (crossesSleepBoundary && !isSleepActivity) {
-      sleepProtected();
-      const startMinute = actualStart!.getHours() * 60 + actualStart!.getMinutes();
-      const [wakeHour, wakeMinute] = wakeTime.split(":").map(Number);
-      const isBeforeWake = startMinute < wakeHour * 60 + wakeMinute;
-      sleepBoundary(
-        isBeforeWake ? "wake" : "bedtime",
-        `This past session overlaps the sleep window (${bedCutoff}–${wakeTime}). You can still save it if the time is correct.`,
-      );
-    }
     saveMutation.mutate();
   };
 
@@ -367,10 +336,6 @@ export function ManualSessionModal({
             />
             <span className="block text-right text-xs text-slate-500">{notes.length}/2000</span>
           </label>
-
-          {crossesSleepBoundary ? (
-            <GuardrailCard tone="sleep" title="Sleep Boundary Conflict" message={`This session overlaps the sleep window (${bedCutoff}-${wakeTime}). Check the times before saving.`} />
-          ) : null}
 
           <div className="min-h-12">{error ? <GuardrailCard tone="critical" title="Could not save session" message={safeErrorMessage(new Error(error), "Review the session details and try again.")} /> : null}</div>
 

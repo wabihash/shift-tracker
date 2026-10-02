@@ -28,12 +28,11 @@ export function ProfileSettings(): ReactElement {
   const [values, setValues] = useState<ProfileSettingsFormValues>({
     wake_time: DEFAULT_WAKE_TIME,
     bed_cutoff: DEFAULT_BED_CUTOFF,
-    weekly_target_hours: 68,
-    weekly_break_target_hours: 22.1,
+    weekly_target_hours: 0,
+    weekly_break_target_hours: 0,
   });
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [weeklyTargetInput, setWeeklyTargetInput] = useState("68");
-  const [weeklyBreakTargetInput, setWeeklyBreakTargetInput] = useState("22.1");
+  const [weeklyTargetInput, setWeeklyTargetInput] = useState("0");
 
   useEffect(() => {
     const profile = profileQuery.data;
@@ -45,14 +44,13 @@ export function ProfileSettings(): ReactElement {
       weekly_break_target_hours: profile.weekly_break_target_hours,
     });
     setWeeklyTargetInput(String(profile.weekly_target_hours));
-    setWeeklyBreakTargetInput(String(profile.weekly_break_target_hours));
   }, [profileQuery.data]);
 
   const updateMutation = useMutation({
     mutationFn: updateProfile,
     onSuccess: (profile: UserProfileDetail) => {
       queryClient.setQueryData(["profile"], profile);
-      notify({ type: "success", title: "Settings saved", message: "Your profile targets and sleep boundaries were updated." });
+      notify({ type: "success", title: "Settings saved", message: "Your weekly target was updated." });
       setValidationError(null);
     },
   });
@@ -73,59 +71,14 @@ export function ProfileSettings(): ReactElement {
       <summary className="cursor-pointer text-sm font-semibold text-slate-200">
         Profile settings
       </summary>
-      <form className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5" onSubmit={submit}>
-        <label className="space-y-1 text-sm text-slate-300">
-          <span>Wake time</span>
-          <input
-            type="time"
-            required
-            value={values.wake_time}
-            onChange={(event) => setValues((current) => ({ ...current, wake_time: event.target.value }))}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-          />
-        </label>
-        <label className="space-y-1 text-sm text-slate-300">
-          <span>Weekly Break / Rest Target (hours)</span>
-          <input
-            type="number"
-            required
-            min={0.1}
-            max={168}
-            step={0.1}
-            value={weeklyBreakTargetInput}
-            onChange={(event) => {
-              const raw = event.target.value;
-              setWeeklyBreakTargetInput(raw);
-              if (raw !== "" && Number.isFinite(Number(raw))) setValues((current) => ({ ...current, weekly_break_target_hours: Number(raw) }));
-            }}
-            onBlur={() => {
-              const parsed = Number(weeklyBreakTargetInput);
-              if (weeklyBreakTargetInput === "" || !Number.isFinite(parsed) || parsed <= 0 || parsed > 168) {
-                const fallback = values.weekly_break_target_hours > 0 ? values.weekly_break_target_hours : 22.1;
-                setValues((current) => ({ ...current, weekly_break_target_hours: fallback }));
-                setWeeklyBreakTargetInput(String(fallback));
-              }
-            }}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-          />
-        </label>
-        <label className="space-y-1 text-sm text-slate-300">
-          <span>Bed cutoff</span>
-          <input
-            type="time"
-            required
-            value={values.bed_cutoff}
-            onChange={(event) => setValues((current) => ({ ...current, bed_cutoff: event.target.value }))}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-          />
-        </label>
+      <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={submit}>
         <label className="space-y-1 text-sm text-slate-300">
           <span>Weekly target hours</span>
           <input
             type="number"
             required
-            min={10}
-            max={120}
+            min={0}
+            max={168}
             step={0.5}
             value={weeklyTargetInput}
             onChange={(event) => {
@@ -137,8 +90,8 @@ export function ProfileSettings(): ReactElement {
             }}
             onBlur={() => {
               const parsed = Number(weeklyTargetInput);
-              const valid = weeklyTargetInput !== "" && Number.isFinite(parsed) && parsed >= 10 && parsed <= 120;
-              const next = valid ? parsed : values.weekly_target_hours >= 10 && values.weekly_target_hours <= 120 ? values.weekly_target_hours : 68;
+              const valid = weeklyTargetInput !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed <= 168;
+              const next = valid ? parsed : values.weekly_target_hours;
               setValues((current) => ({ ...current, weekly_target_hours: next }));
               setWeeklyTargetInput(String(next));
             }}

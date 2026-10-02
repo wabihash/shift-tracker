@@ -130,7 +130,7 @@ export function WeeklyShiftTable(): ReactElement {
                       const color = activity?.color ?? "#64748b";
                       const running = new Date(session.actual_end).getTime() > now.getTime();
                       return <div key={session.id} title={`${activity?.name ?? "Activity"}${running ? " · Running" : " · Completed"}`} className="rounded-md border px-2 py-1.5 text-xs font-medium" style={{ color, borderColor: `${color}80`, backgroundColor: `${color}1a` }}><span className="block truncate">{activity?.name ?? "Unknown activity"}</span><span className="mt-0.5 block text-[10px] opacity-70">{running ? "Running" : "Completed"}</span></div>;
-                    })}</div> : !isLiveHere ? <span className="block px-2 py-2 text-center text-xs text-slate-600">{scheduledRule ? "—" : "Off"}</span> : null}
+                    })}</div> : !isLiveHere ? <span className="block px-2 py-2 text-center text-xs text-slate-600">{scheduledRule ? "—" : "Open"}</span> : null}
                   </td>;
                 })}
               </tr>

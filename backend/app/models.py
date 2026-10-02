@@ -25,10 +25,10 @@ class UserProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     clerk_user_id: str = Field(index=True, unique=True, max_length=255)
     user_name: Optional[str] = Field(default=None, max_length=255)
-    wake_time: time = Field(default=time(5, 41))
-    bed_cutoff: time = Field(default=time(22, 15))
-    weekly_target_hours: float = Field(default=68.0)
-    weekly_break_target_hours: float = Field(default=22.1, nullable=False)
+    wake_time: time = Field(default=time(0, 0))
+    bed_cutoff: time = Field(default=time(0, 0))
+    weekly_target_hours: float = Field(default=0.0)
+    weekly_break_target_hours: float = Field(default=0.0, nullable=False)
     created_at: datetime = Field(default_factory=_utc_now)
 
     @property

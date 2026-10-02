@@ -16,6 +16,7 @@ import { KeyboardShortcutsModal } from "./components/common/KeyboardShortcutsMod
 import { OfflineSyncListener } from "./components/common/OfflineSyncListener";
 import { ToastProvider } from "./components/common/ToastProvider";
 import { getCadenceMessage } from "./config/cadenceMessages";
+import { InstallPwaButton } from "./components/InstallPwaButton";
 
 function AuthenticatedDashboard(): ReactElement | null {
   const { getToken, isLoaded, isSignedIn } = useAuth();
@@ -122,6 +123,8 @@ function QuoteBanner(): ReactElement {
 function ShiftTrackerApp(): ReactElement {
   const [activeView, setActiveView] = useState<"planner" | "analytics" | "activities" | "settings">("planner");
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false);
+  const [startStopwatchRequest, setStartStopwatchRequest] = useState(0);
+  const [manualSessionRequest, setManualSessionRequest] = useState(0);
 
   const tabs = [
     { id: "planner", label: "Planner" },
@@ -150,6 +153,7 @@ function ShiftTrackerApp(): ReactElement {
                 <Settings2 className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Configure Shifts</span><span className="sm:hidden">Shifts</span>
               </button>
               <KeyboardShortcutsModal />
+              <InstallPwaButton />
               <UserButton
                 afterSignOutUrl="/"
                 appearance={{
@@ -184,8 +188,8 @@ function ShiftTrackerApp(): ReactElement {
 
           <section aria-label="Planner view" className={`${activeView === "planner" ? "flex" : "hidden"} min-w-0 flex-1 flex-col gap-4 lg:flex-row`}>
             <section className="w-full shrink-0 rounded-xl border border-slate-800 bg-slate-900/60 p-4 lg:w-[350px] xl:w-[400px]">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Execution Station</h2>
-              <LiveStopwatch />
+              <h2 id="execution-station" className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Execution Station</h2>
+              <div id="execution-station"><LiveStopwatch startRequest={startStopwatchRequest} manualSessionRequest={manualSessionRequest} /></div>
             </section>
             <section className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <WeeklyShiftTable />
@@ -193,7 +197,18 @@ function ShiftTrackerApp(): ReactElement {
           </section>
 
           <section aria-label="Analytics view" className={`${activeView === "analytics" ? "block" : "hidden"} min-w-0 rounded-xl border border-slate-800 bg-slate-900/40 p-4`}>
-            <AnalyticsDashboard />
+            <AnalyticsDashboard
+              onStartStopwatch={() => {
+                setActiveView("planner");
+                setStartStopwatchRequest((request) => request + 1);
+                window.setTimeout(() => document.getElementById("execution-station")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+              }}
+              onLogPastSession={() => {
+                setActiveView("planner");
+                setManualSessionRequest((request) => request + 1);
+                window.setTimeout(() => document.getElementById("execution-station")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+              }}
+            />
           </section>
 
           <section aria-label="Activities view" className={`${activeView === "activities" ? "block" : "hidden"} min-w-0`}>

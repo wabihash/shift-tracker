@@ -4,8 +4,8 @@ export type DateString = string;
 /** ISO-8601 time string (HH:MM:SS) */
 export type TimeString = string;
 
-export const DEFAULT_WAKE_TIME: TimeString = "05:41";
-export const DEFAULT_BED_CUTOFF: TimeString = "22:15";
+export const DEFAULT_WAKE_TIME: TimeString = "00:00";
+export const DEFAULT_BED_CUTOFF: TimeString = "00:00";
 
 /** ISO-8601 datetime string */
 export type DateTimeString = string;

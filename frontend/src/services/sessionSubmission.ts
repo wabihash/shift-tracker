@@ -142,7 +142,7 @@ async function handleOfflineSubmission(
       });
     } else {
       const defaultWeekly: WeeklyAnalyticsResponse = {
-        weekly_target_goal: resolvedProfile?.weekly_target_hours ?? 30.0,
+        weekly_target_goal: resolvedActivities?.reduce((sum, activity) => sum + activity.weekly_target_hours, 0) || resolvedProfile?.weekly_target_hours || 0,
         total_completed_hours: 0,
         overall_percentage: 0,
         cap_alerts: [],
@@ -160,9 +160,9 @@ async function handleOfflineSubmission(
         })),
         total_lost_deductions_min: 0,
         total_late_arrival_min: 0,
-        weekly_buffer: 89.0,
-        daily_buffer: 12.7,
-        logged_sleep_hours: 49.0,
+        weekly_buffer: Math.max(0, 168 - (resolvedActivities?.reduce((sum, activity) => sum + activity.weekly_target_hours, 0) || resolvedProfile?.weekly_target_hours || 0)),
+        daily_buffer: Math.round(Math.max(0, 168 - (resolvedActivities?.reduce((sum, activity) => sum + activity.weekly_target_hours, 0) || resolvedProfile?.weekly_target_hours || 0)) / 7 * 10) / 10,
+        logged_sleep_hours: 0,
       };
       appliedAnalytics = recalculateWeeklyAnalytics(defaultWeekly, savedRecord, {
         profile: resolvedProfile,
