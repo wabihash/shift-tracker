@@ -13,15 +13,18 @@ from app.routers import activities, analytics, auth, planner, profile, sessions
 load_dotenv()
 
 
-def _parse_cors_origins(raw: str) -> list[str]:
-    value = raw.strip()
-    if not value or value == "*":
-        return [
-            "https://shift-tracker-henna.vercel.app",
-            "http://localhost:5173",
-            "http://localhost:3000",
-        ]
-    return [origin.strip() for origin in value.split(",") if origin.strip()]
+origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+if not origins:
+    origins = [
+        "https://shift-tracker-henna.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
 
 
 app = FastAPI(title="Shift Architecture & Time Engine API")
@@ -31,8 +34,8 @@ app.add_middleware(MonitoringMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_parse_cors_origins(os.getenv("CORS_ORIGINS", "")),
-    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_origins=origins,
+    allow_origin_regex=r"^https://shift-tracker.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
