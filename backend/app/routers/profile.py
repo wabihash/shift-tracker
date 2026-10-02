@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -13,6 +15,7 @@ from app.db import get_session
 from app.models import ShiftRule, UserProfile
 
 router = APIRouter(prefix="/api", tags=["profile"])
+logger = logging.getLogger(__name__)
 
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
@@ -72,26 +75,7 @@ def _load_profile(
 
 
 def get_or_create_profile(session: Session, user_id: int) -> UserProfile:
-    profile = _load_profile(session, user_id)
-    if profile is not None:
-        return profile
-
-    profile = UserProfile(
-        user_id=user_id,
-        weekly_target_hours=0.0,
-    )
-    session.add(profile)
-    session.flush()
-    session.commit()
-    session.refresh(profile)
-
-    loaded = _load_profile(session, user_id)
-    if loaded is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to initialize user profile",
-        )
-    return loaded
+    return create_empty_profile(session, user_id)
 
 
 def create_empty_profile(session: Session, user_id: int) -> UserProfile:
@@ -103,8 +87,27 @@ def create_empty_profile(session: Session, user_id: int) -> UserProfile:
         weekly_target_hours=0.0,
     )
     session.add(profile)
-    session.commit()
-    session.refresh(profile)
+    try:
+        session.flush()
+        session.commit()
+        session.refresh(profile)
+    except IntegrityError as exc:
+        session.rollback()
+        logger.warning(
+            "Profile insert conflict for user %s; checking for a concurrent profile: %s",
+            user_id,
+            exc,
+            exc_info=True,
+        )
+        existing = _load_profile(session, user_id)
+        if existing is not None:
+            return existing
+        raise
+    except Exception as exc:
+        session.rollback()
+        logger.exception("Failed to create profile for user %s: %s", user_id, exc)
+        raise
+
     return _load_profile(session, user_id) or profile
 
 

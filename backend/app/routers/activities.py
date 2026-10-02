@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, delete, select
 
 from app.auth import get_current_user
@@ -78,7 +79,18 @@ def create_activity(
     session: Annotated[Session, Depends(get_session)],
     user_id: Annotated[int, Depends(get_current_user)],
 ) -> Activity:
-    profile = create_empty_profile(session, user_id)
+    try:
+        profile = create_empty_profile(session, user_id)
+    except IntegrityError:
+        # Another request may have created the unique user profile after the
+        # initial lookup. Roll back before re-querying the aborted transaction.
+        session.rollback()
+        profile = session.exec(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        ).first()
+        if profile is None:
+            raise
+
     activity = Activity(
         profile_id=profile.id,
         name=body.name.strip(),
