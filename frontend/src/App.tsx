@@ -1,5 +1,6 @@
-import { Settings2 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
+import { RefreshCw, Settings2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type TouchEvent } from "react";
 
 import { useAuth } from "./context/AuthContext";
 import { AnalyticsDashboard } from "./components/dashboard/AnalyticsDashboard";
@@ -73,11 +74,108 @@ function QuoteBanner(): ReactElement {
   );
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || Boolean(
+    target.closest("input, textarea, select, [contenteditable='true']"),
+  );
+}
+
 function ShiftTrackerApp(): ReactElement {
+  const queryClient = useQueryClient();
   const [activeView, setActiveView] = useState<"planner" | "analytics" | "activities" | "settings">("planner");
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false);
   const [startStopwatchRequest, setStartStopwatchRequest] = useState(0);
   const [manualSessionRequest, setManualSessionRequest] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshToastVisible, setRefreshToastVisible] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const refreshInProgress = useRef(false);
+  const toastTimeout = useRef<number | null>(null);
+  const pullStartY = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const mainScrollRef = useRef<HTMLElement>(null);
+
+  const refreshData = useCallback(async () => {
+    if (refreshInProgress.current) return;
+    refreshInProgress.current = true;
+    setRefreshing(true);
+    pullDistanceRef.current = 0;
+    setPullDistance(0);
+
+    try {
+      await Promise.allSettled([
+        queryClient.refetchQueries({ queryKey: ["activities"], type: "active" }, { throwOnError: true }),
+        queryClient.refetchQueries({ queryKey: ["sessions"], type: "active" }, { throwOnError: true }),
+        queryClient.refetchQueries({ queryKey: ["profile"], type: "active" }, { throwOnError: true }),
+        queryClient.refetchQueries({ queryKey: ["analytics"], type: "active" }, { throwOnError: true }),
+      ]);
+    } finally {
+      refreshInProgress.current = false;
+      setRefreshing(false);
+      setRefreshToastVisible(true);
+      if (toastTimeout.current !== null) window.clearTimeout(toastTimeout.current);
+      toastTimeout.current = window.setTimeout(() => {
+        setRefreshToastVisible(false);
+        toastTimeout.current = null;
+      }, 1500);
+    }
+  }, [queryClient]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "r" ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isEditableTarget(event.target)
+      ) return;
+      event.preventDefault();
+      void refreshData();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [refreshData]);
+
+  useEffect(() => () => {
+    if (toastTimeout.current !== null) window.clearTimeout(toastTimeout.current);
+  }, []);
+
+  const updatePullDistance = (distance: number) => {
+    pullDistanceRef.current = distance;
+    setPullDistance(distance);
+  };
+
+  const handleTouchStart = (event: TouchEvent<HTMLElement>) => {
+    if (
+      !event.touches.length ||
+      window.scrollY > 0 ||
+      (mainScrollRef.current?.scrollTop ?? 0) > 0 ||
+      isEditableTarget(event.target)
+    ) return;
+    pullStartY.current = event.touches[0].clientY;
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLElement>) => {
+    if (pullStartY.current === null || !event.touches.length) return;
+    if (window.scrollY > 0 || (mainScrollRef.current?.scrollTop ?? 0) > 0) {
+      pullStartY.current = null;
+      updatePullDistance(0);
+      return;
+    }
+    const distance = event.touches[0].clientY - pullStartY.current;
+    updatePullDistance(distance > 0 ? Math.min(distance, 52) : 0);
+  };
+
+  const handleTouchEnd = () => {
+    const shouldRefresh = pullDistanceRef.current >= 48;
+    pullStartY.current = null;
+    updatePullDistance(0);
+    if (shouldRefresh) void refreshData();
+  };
 
   const tabs = [
     { id: "planner", label: "Planner" },
@@ -102,6 +200,22 @@ function ShiftTrackerApp(): ReactElement {
             <QuoteBanner />
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
               <NetworkStatusBadge />
+              <div className="group relative">
+                <button
+                  type="button"
+                  onClick={() => void refreshData()}
+                  disabled={refreshing}
+                  aria-label="Refresh data"
+                  aria-keyshortcuts="R"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400 disabled:cursor-wait disabled:opacity-70"
+                >
+                  <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+                </button>
+                <div className="pointer-events-none absolute right-0 top-full z-50 mt-1 hidden items-center gap-2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 shadow-lg md:group-hover:flex md:group-focus-within:flex">
+                  <span>Refresh data</span>
+                  <kbd className="rounded border border-slate-600 bg-slate-800 px-1 font-mono">R</kbd>
+                </div>
+              </div>
               <KeyboardShortcutsModal />
               <InstallPwaButton />
               <UserMenu />
@@ -126,7 +240,21 @@ function ShiftTrackerApp(): ReactElement {
           </nav>
         </header>
 
-        <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-3 px-4 pb-8 pt-3 sm:pt-4">
+        <main
+          ref={mainScrollRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-3 px-4 pb-8 pt-3 sm:pt-4"
+        >
+          <div
+            className="flex items-center justify-center overflow-hidden text-slate-400 transition-[height] duration-150 md:hidden"
+            style={{ height: `${refreshing ? 44 : pullDistance}px` }}
+            aria-hidden="true"
+          >
+            <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : pullDistance >= 48 ? "text-indigo-300" : ""}`} />
+          </div>
           {activeView !== "settings" ? <ShiftStatusBanner /> : null}
 
           <section aria-label="Planner view" className={`${activeView === "planner" ? "flex" : "hidden"} min-w-0 flex-1 flex-col gap-4 lg:flex-row`}>
@@ -168,6 +296,15 @@ function ShiftTrackerApp(): ReactElement {
             </div>
           </section>
         </main>
+        {refreshToastVisible ? (
+          <div
+            className="fixed bottom-4 left-1/2 z-[120] -translate-x-1/2 rounded-full border border-slate-700 bg-slate-800/90 px-3 py-1.5 text-xs text-slate-200 shadow-md"
+            role="status"
+            aria-live="polite"
+          >
+            Data refreshed
+          </div>
+        ) : null}
       </div>
     </ToastProvider>
   );
