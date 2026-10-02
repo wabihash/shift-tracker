@@ -201,21 +201,6 @@ export function LiveStopwatch({
     setSessionCapture(null);
   };
 
-  useEffect(() => {
-    const handleShortcutStart = () => {
-      if (canStart) handleStart();
-    };
-    const handleShortcutStop = () => {
-      if (status !== "idle") handleStop();
-    };
-    window.addEventListener("shift-tracker:start", handleShortcutStart);
-    window.addEventListener("shift-tracker:stop", handleShortcutStop);
-    return () => {
-      window.removeEventListener("shift-tracker:start", handleShortcutStart);
-      window.removeEventListener("shift-tracker:stop", handleShortcutStop);
-    };
-  }, [canStart, handleStart, handleStop, status]);
-
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">

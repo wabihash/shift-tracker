@@ -11,7 +11,6 @@ import { LiveStopwatch } from "./components/timer/LiveStopwatch";
 import { ProfileSettings } from "./components/profile/ProfileSettings";
 import { CadenceSettings } from "./components/profile/CadenceSettings";
 import { ActivitiesManager } from "./components/activities/ActivitiesManager";
-import { KeyboardShortcutsModal } from "./components/common/KeyboardShortcutsModal";
 import { OfflineSyncListener } from "./components/common/OfflineSyncListener";
 import { ToastProvider } from "./components/common/ToastProvider";
 import { getCadenceMessage } from "./config/cadenceMessages";
@@ -232,7 +231,6 @@ function ShiftTrackerApp(): ReactElement {
                   <kbd className="rounded border border-slate-600 bg-slate-800 px-1 font-mono">R</kbd>
                 </div>
               </div>
-              <KeyboardShortcutsModal />
               <InstallPwaButton />
               <UserMenu />
             </div>
