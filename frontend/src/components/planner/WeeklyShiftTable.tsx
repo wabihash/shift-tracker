@@ -9,6 +9,7 @@ import { useAuthToken } from "../../auth/AuthTokenContext";
 import { useShiftStore } from "../../stores/useShiftStore";
 import { useTimerStore } from "../../stores/useTimerStore";
 import type { Activity, SessionLog, ShiftRule } from "../../types/schema";
+import { getAppNow } from "../../utils/serverClock";
 
 function dateKey(date: Date): string {
   const year = date.getFullYear();
@@ -28,18 +29,24 @@ function sessionShift(session: SessionLog, day: Date, rules: ShiftRule[]): numbe
   if (session.shift_number) return session.shift_number;
   const actual = new Date(session.actual_start);
   const scheduled = session.scheduled_start ? new Date(session.scheduled_start) : null;
+  const previousDay = new Date(day);
+  previousDay.setDate(previousDay.getDate() - 1);
+  const currentDayNumber = (day.getDay() + 6) % 7;
+  const previousDayNumber = (previousDay.getDay() + 6) % 7;
   for (const rule of rules) {
-    if (rule.day_of_week !== (day.getDay() + 6) % 7) continue;
+    const ruleDate = rule.day_of_week === currentDayNumber
+      ? day
+      : rule.day_of_week === previousDayNumber
+        ? previousDay
+        : null;
+    if (!ruleDate) continue;
     if (rule.slot_type === "break") continue;
     const startValue = rule.slot_start ?? rule.standard_start;
     const endValue = rule.slot_end ?? rule.standard_end;
-    let start = timeOnDate(day, startValue);
-    let end = timeOnDate(day, endValue);
-    if (end <= start) end = new Date(end.getTime() + 86_400_000);
+    const start = timeOnDate(ruleDate, startValue);
+    const end = timeOnDate(ruleDate, endValue);
+    if (end <= start) end.setDate(end.getDate() + 1);
     const candidate = scheduled ?? actual;
-    if (candidate >= start && candidate < end) return rule.shift_number;
-    start = new Date(start.getTime() - 86_400_000);
-    end = new Date(end.getTime() - 86_400_000);
     if (candidate >= start && candidate < end) return rule.shift_number;
   }
   return null;
@@ -54,9 +61,9 @@ export function WeeklyShiftTable(): ReactElement {
   const currentShiftNumber = useShiftStore((state) => state.currentShiftNumber);
   const timerStatus = useTimerStore((state) => state.status);
   const activeActivityId = useTimerStore((state) => state.activeActivityId);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(getAppNow);
   useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1000);
+    const id = window.setInterval(() => setNow(getAppNow()), 1000);
     return () => window.clearInterval(id);
   }, []);
 

@@ -14,6 +14,7 @@ import { submitOrQueueSession } from "../../services/sessionSubmission";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import { useShiftEngine } from "../../hooks/useShiftEngine";
 import { useToast } from "../common/ToastProvider";
+import { getAppNowIso } from "../../utils/serverClock";
 import { getCadenceMessage, getRunningFocusCue } from "../../config/cadenceMessages";
 import { useShiftStore } from "../../stores/useShiftStore";
 import {
@@ -161,7 +162,7 @@ export function LiveStopwatch({
       resetTimer();
       return;
     }
-    const endIso = new Date().toISOString();
+    const endIso = getAppNowIso();
     const grossSeconds = selectElapsedSeconds(state);
     const activityId =
       activeActivityId ??

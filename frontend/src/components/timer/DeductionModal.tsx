@@ -14,10 +14,10 @@ import { useAuthToken } from "../../auth/AuthTokenContext";
 import { submitOrQueueSession } from "../../services/sessionSubmission";
 import { sessionDeductionSchema } from "../../schemas/forms";
 import { useTimerStore } from "../../stores/useTimerStore";
-import type { DateString } from "../../types/schema";
 import { useToast } from "../common/ToastProvider";
 import { safeErrorMessage } from "../../api/client";
 import { GuardrailCard } from "../common/GuardrailCard";
+import { getClientTimezone, getLocalDateString } from "../../utils/serverClock";
 
 export interface DeductionModalProps {
   isOpen: boolean;
@@ -32,10 +32,6 @@ export interface DeductionModalProps {
   grossSeconds: number;
   actualStartIso: string;
   actualEndIso: string;
-}
-
-function toDateString(value: Date): DateString {
-  return value.toISOString().slice(0, 10);
 }
 
 export function DeductionModal({
@@ -123,7 +119,8 @@ export function DeductionModal({
           deducted_minutes: parsed.data.deducted_minutes,
           break_overrun_minutes: breakOverrunMinutes,
           notes: parsed.data.notes ?? null,
-          logged_date: toDateString(new Date(creditedEndIso)),
+          logged_date: getLocalDateString(new Date(creditedEndIso)),
+          client_timezone: getClientTimezone(),
         },
         queryClient,
         {

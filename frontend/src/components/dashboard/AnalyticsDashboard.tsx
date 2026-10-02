@@ -16,6 +16,7 @@ import { HistoricalSummaryTable } from "../analytics/HistoricalSummaryTable";
 import { WeeklyProgressCard } from "../analytics/WeeklyProgressCard";
 import { BurndownChartSkeleton, WeeklyCardSkeleton } from "../common/SkeletonLoaders";
 import { safeErrorMessage } from "../../api/client";
+import { getAppNow } from "../../utils/serverClock";
 
 interface AnalyticsDashboardProps {
   onStartStopwatch?: () => void;
@@ -27,7 +28,7 @@ function toDateString(date: Date): DateString {
 }
 
 function getDefaultWeekRange(): { start: DateString; end: DateString } {
-  const now = new Date();
+  const now = getAppNow();
   return {
     start: toDateString(startOfWeek(now, { weekStartsOn: 1 })),
     end: toDateString(endOfWeek(now, { weekStartsOn: 1 })),

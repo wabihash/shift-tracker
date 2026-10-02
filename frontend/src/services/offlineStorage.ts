@@ -15,6 +15,7 @@ export const CACHED_WEEKLY_SUMMARY_KEY = "cached_weekly_summary";
 export interface PendingSessionLog extends SessionLog {
   localId: string;
   queued_at?: string;
+  client_timezone?: string;
 }
 
 function localUserId(): number | undefined {
@@ -84,6 +85,9 @@ export async function saveSessionLocally(
     break_overrun_minutes: sessionPayload.break_overrun_minutes ?? 0,
     notes: sessionPayload.notes ?? null,
     logged_date: sessionPayload.logged_date,
+    client_timezone: "client_timezone" in sessionPayload
+      ? sessionPayload.client_timezone
+      : undefined,
     localId,
     created_at: sessionPayload.created_at ?? now,
     queued_at: now,

@@ -2,6 +2,7 @@ import { Sparkles, Target, TrendingUp } from "lucide-react";
 import type { ReactElement } from "react";
 
 import type { DateString, SessionLog } from "../../types/schema";
+import { getAppNow } from "../../utils/serverClock";
 import { getMilestoneMessage } from "../../config/cadenceMessages";
 
 export interface WeeklyProgressCardProps {
@@ -16,11 +17,12 @@ export interface WeeklyProgressCardProps {
 }
 
 function remainingDaysInWeek(weekEnd: DateString): number {
-  const end = new Date(`${weekEnd}T23:59:59`);
-  const now = new Date();
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const diff = Math.ceil((end.getTime() - now.getTime()) / msPerDay);
-  return Math.max(1, diff);
+  const now = getAppNow();
+  const [endYear, endMonth, endDay] = weekEnd.split("-").map(Number);
+  const endCalendarDay = Date.UTC(endYear, endMonth - 1, endDay);
+  const todayCalendarDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const calendarDays = Math.round((endCalendarDay - todayCalendarDay) / 86_400_000) + 1;
+  return Math.max(1, calendarDays);
 }
 
 export function WeeklyProgressCard({
@@ -80,7 +82,7 @@ export function WeeklyProgressCard({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 sm:col-span-2">
           <p className="text-xs uppercase tracking-wide text-violet-200">Your Weekly Buffer</p>
-          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyTarget <= 0 ? "— hrs" : `${weeklyBuffer.toFixed(1)} hrs`}</p>
+          <p className="mt-1 font-mono text-xl text-slate-100">{weeklyTarget <= 0 ? "â€” hrs" : `${weeklyBuffer.toFixed(1)} hrs`}</p>
           <p className="mt-1 text-xs text-slate-400">{weeklyTarget <= 0 ? "Set your weekly target to calculate your buffer margin." : `Daily Average Buffer: ${dailyBuffer.toFixed(1)} hrs/day`}</p>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">

@@ -16,6 +16,7 @@ import { OfflineSyncListener } from "./components/common/OfflineSyncListener";
 import { ToastProvider } from "./components/common/ToastProvider";
 import { getCadenceMessage } from "./config/cadenceMessages";
 import { InstallPwaButton } from "./components/InstallPwaButton";
+import { getAppNow, syncServerClock } from "./utils/serverClock";
 
 function AuthScreen(): ReactElement {
   const { login, register } = useAuth();
@@ -39,10 +40,10 @@ function UserMenu(): ReactElement {
   return <div className="relative"><button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-100">{user?.email.slice(0, 1).toUpperCase()}</button>{open ? <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-slate-700 bg-slate-900 p-3 shadow-xl"><p className="truncate text-xs text-slate-300">{user?.email}</p><button type="button" onClick={logout} className="mt-3 w-full rounded-md px-3 py-2 text-left text-sm text-rose-200 hover:bg-slate-800">Log Out</button></div> : null}</div>;
 }
 function LiveClock(): ReactElement {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(getAppNow);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => setNow(new Date()), 1000);
+    const intervalId = window.setInterval(() => setNow(getAppNow()), 1000);
     return () => window.clearInterval(intervalId);
   }, []);
 
@@ -95,6 +96,17 @@ function ShiftTrackerApp(): ReactElement {
   const pullStartY = useRef<number | null>(null);
   const pullDistanceRef = useRef(0);
   const mainScrollRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    void syncServerClock();
+    const intervalId = window.setInterval(() => void syncServerClock(), 5 * 60 * 1000);
+    const handleOnline = () => void syncServerClock();
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   const refreshData = useCallback(async () => {
     if (refreshInProgress.current) return;

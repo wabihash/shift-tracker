@@ -193,4 +193,5 @@ export interface SessionLogCreateInput {
   break_overrun_minutes?: number;
   notes?: string | null;
   logged_date: DateString;
+  client_timezone?: string;
 }

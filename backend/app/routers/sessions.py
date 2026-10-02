@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -56,13 +57,31 @@ class SessionLogCreateBody(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
     break_overrun_minutes: int = Field(default=0, ge=0)
     logged_date: date
+    client_timezone: str | None = None
 
     @model_validator(mode="after")
     def validate_actual_window(self) -> SessionLogCreateBody:
+        for field_name in (
+            "actual_start",
+            "actual_end",
+            "scheduled_start",
+            "scheduled_end",
+        ):
+            value = getattr(self, field_name)
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise ValueError(f"{field_name} must include a timezone offset")
         if self.actual_end <= self.actual_start:
             raise ValueError("actual_end must be after actual_start")
         if self.deducted_minutes > self.gross_minutes:
             raise ValueError("deducted_minutes cannot exceed gross_minutes")
+        if self.client_timezone:
+            try:
+                local_zone = ZoneInfo(self.client_timezone)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ValueError("client_timezone must be a valid IANA timezone")
+            # A session stays whole and is assigned to its end date in the
+            # user's timezone; overnight work is not split across dates.
+            self.logged_date = self.actual_end.astimezone(local_zone).date()
         return self
 
 

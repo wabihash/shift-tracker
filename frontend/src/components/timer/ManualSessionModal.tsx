@@ -16,17 +16,11 @@ import { submitOrQueueSession } from "../../services/sessionSubmission";
 import { useToast } from "../common/ToastProvider";
 import { safeErrorMessage } from "../../api/client";
 import { GuardrailCard } from "../common/GuardrailCard";
+import { getAppNow, getClientTimezone, getLocalDateString } from "../../utils/serverClock";
 
 interface ManualSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-function localDateValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function combineLocalDateTime(dateValue: string, timeValue: string, dayOffset = 0): Date | null {
@@ -67,7 +61,7 @@ export function ManualSessionModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const activityRef = useRef<HTMLSelectElement>(null);
   const [activityId, setActivityId] = useState("");
-  const [loggedDate, setLoggedDate] = useState(() => localDateValue(new Date()));
+  const [loggedDate, setLoggedDate] = useState(() => getLocalDateString(getAppNow()));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [deductionInput, setDeductionInput] = useState("0");
@@ -108,7 +102,7 @@ export function ManualSessionModal({
   useEffect(() => {
     if (!isOpen) return;
     setActivityId("");
-    setLoggedDate(localDateValue(new Date()));
+    setLoggedDate(getLocalDateString(getAppNow()));
     setStartTime("09:00");
     setEndTime("10:00");
     setDeductionInput("0");
@@ -175,7 +169,8 @@ export function ManualSessionModal({
           gross_minutes: grossMinutes,
           deducted_minutes: parsedDeduction,
           notes: notes.trim() || null,
-          logged_date: actualEnd ? localDateValue(actualEnd) : loggedDate,
+          logged_date: actualEnd ? getLocalDateString(actualEnd) : loggedDate,
+          client_timezone: getClientTimezone(),
         },
         queryClient,
         {

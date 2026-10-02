@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import type { ActivityMetric, CapAlert } from "../../types/schema";
 import { useToast } from "../common/ToastProvider";
+import { getAppNow, getLocalDateString } from "../../utils/serverClock";
 
 export interface CapAlertBannerProps {
   capAlerts: CapAlert[];
@@ -19,7 +20,7 @@ export function CapAlertBanner({
   metrics,
   weeklyTargetHours,
 }: CapAlertBannerProps): ReactElement | null {
-  const weekLabel = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const weekLabel = useMemo(() => getLocalDateString(getAppNow()), []);
   const [collapsed, setCollapsed] = useState(false);
   const { capWarning } = useToast();
   const notifiedCaps = useRef<Set<string>>(new Set());

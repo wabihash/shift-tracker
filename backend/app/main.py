@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 from dotenv import load_dotenv
@@ -83,4 +84,7 @@ def on_startup() -> None:
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }

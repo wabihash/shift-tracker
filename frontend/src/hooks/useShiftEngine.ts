@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useShiftStore } from "../stores/useShiftStore";
 import type { TimerKind, TimerStatus } from "../stores/useTimerStore";
 import type { ShiftRule, TimeString } from "../types/schema";
+import { getAppNow } from "../utils/serverClock";
 
 export interface ShiftWindow {
   rule: ShiftRule;
@@ -39,13 +40,13 @@ export function useShiftEngine(
   timerStatus: TimerStatus,
   timerKind: TimerKind,
 ) {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(getAppNow);
   const updateShiftStatus = useShiftStore((state) => state.updateShiftStatus);
   const storedShiftNumber = useShiftStore((state) => state.currentShiftNumber);
   const hasConfiguredShifts = rules.some((rule) => rule.slot_type !== "break");
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    const timer = window.setInterval(() => setNow(getAppNow()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 

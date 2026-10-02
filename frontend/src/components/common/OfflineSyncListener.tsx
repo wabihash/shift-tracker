@@ -64,6 +64,7 @@ export function OfflineSyncListener(): null {
             break_overrun_minutes: item.break_overrun_minutes,
             notes: item.notes,
             logged_date: item.logged_date,
+            client_timezone: item.client_timezone,
           });
 
           // Upon receiving verified response, remove from IndexedDB

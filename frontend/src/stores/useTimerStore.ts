@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { getAppNowIso } from "../utils/serverClock";
 
 export type TimerStatus = "idle" | "running" | "paused";
 export type TimerKind = "work" | "break";
@@ -96,7 +97,7 @@ export const useTimerStore = create<TimerStore>()(
           utcStartAnchor: new Date().toISOString(),
           tickTs: Date.now(),
           timerKind: "work",
-          actualStartIso: new Date().toISOString(),
+          actualStartIso: getAppNowIso(),
           shiftNumber: schedule?.shiftNumber ?? null,
           scheduledStartIso: schedule?.scheduledStartIso ?? null,
           scheduledEndIso: schedule?.scheduledEndIso ?? null,
@@ -107,7 +108,7 @@ export const useTimerStore = create<TimerStore>()(
 
       startBreak: (endIso) => set({
         status: "running", timerKind: "break", activeActivityId: null, plannedShiftId: null,
-        grossSeconds: 0, utcStartAnchor: null, actualStartIso: new Date().toISOString(),
+        grossSeconds: 0, utcStartAnchor: null, actualStartIso: getAppNowIso(),
         shiftNumber: null,
         scheduledStartIso: null, scheduledEndIso: endIso, breakOverrunMinutes: 0,
         breakEndsAtIso: endIso, tickTs: Date.now(),
