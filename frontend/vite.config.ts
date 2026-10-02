@@ -37,6 +37,20 @@ export default defineConfig({
         navigateFallback: "index.html",
         runtimeCaching: [
           {
+            // HTML / navigation requests — always hit the network so updated
+            // CSP headers and fresh markup are served immediately.
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "html-cache",
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24, // 24 hours
+              },
+            },
+          },
+          {
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkFirst",
             options: {
@@ -52,13 +66,16 @@ export default defineConfig({
             },
           },
           {
+            // Truly static assets only (fonts, images, CSS, JS bundles).
+            // Excludes HTML/document requests which are handled above.
             urlPattern: ({ request, url }) =>
-              request.destination === "style" ||
-              request.destination === "script" ||
-              request.destination === "font" ||
-              request.destination === "image" ||
-              request.destination === "worker" ||
-              /\.(?:html|css|js|mjs|woff|woff2|ttf|otf|eot|svg|png|jpg|jpeg|webp|ico)$/.test(url.pathname),
+              request.destination !== "document" &&
+              (request.destination === "style" ||
+                request.destination === "script" ||
+                request.destination === "font" ||
+                request.destination === "image" ||
+                request.destination === "worker" ||
+                /\.(?:css|js|mjs|woff|woff2|ttf|otf|eot|svg|png|jpg|jpeg|webp|ico)$/.test(url.pathname)),
             handler: "CacheFirst",
             options: {
               cacheName: "static-assets-cache",
