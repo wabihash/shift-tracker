@@ -154,7 +154,7 @@ export interface ShiftRuleUpdateInput {
 
 export interface ActivityCreateInput {
   name: string;
-  weekly_target_hours?: number;
+  weekly_target_hours: number;
   color?: string;
 }
 

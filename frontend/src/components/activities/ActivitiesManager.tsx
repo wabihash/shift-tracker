@@ -14,6 +14,18 @@ import { GuardrailCard } from "../common/GuardrailCard";
 
 const inputClass =
   "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100";
+const durationError = "Please enter a valid positive duration (at least 0.25 hours).";
+
+function validateDuration(raw: string): { value?: number; error?: string } {
+  if (!raw.trim()) return { error: durationError };
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0.25) return { error: durationError };
+  if (value > 24) return { error: "Duration cannot exceed 24 hours." };
+  if (Math.abs(value * 4 - Math.round(value * 4)) > 1e-8) {
+    return { error: "Duration must use 0.25-hour increments." };
+  }
+  return { value };
+}
 
 export function ActivitiesManager(): ReactElement {
   const token = useAuthToken();
@@ -52,6 +64,16 @@ export function ActivitiesManager(): ReactElement {
     onSuccess: refresh,
   });
 
+  const handleDurationInput = (raw: string, setValue: (value: string) => void) => {
+    if (raw.startsWith("-")) {
+      setValue("");
+      setError(durationError);
+      return;
+    }
+    setValue(raw);
+    setError(null);
+  };
+
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = draft.name.trim();
@@ -59,13 +81,13 @@ export function ActivitiesManager(): ReactElement {
       setError("Enter an activity name.");
       return;
     }
-    setError(null);
-    const weeklyTarget = draftTargetInput.trim() === "" ? 0 : Number(draftTargetInput);
-    if (!Number.isFinite(weeklyTarget) || weeklyTarget < 0) {
-      setError("Weekly target must be zero or greater.");
+    const duration = validateDuration(draftTargetInput);
+    if (duration.error || duration.value === undefined) {
+      setError(duration.error ?? durationError);
       return;
     }
-    createMutation.mutate({ ...draft, name, weekly_target_hours: weeklyTarget }, {
+    setError(null);
+    createMutation.mutate({ ...draft, name, weekly_target_hours: duration.value }, {
       onSuccess: () => { setDraft({ name: "", weekly_target_hours: 0, color: "#6366f1" }); setDraftTargetInput(""); },
     });
   };
@@ -74,16 +96,20 @@ export function ActivitiesManager(): ReactElement {
     const data = new FormData(form);
     const name = String(data.get("name") ?? "").trim();
     const targetRaw = String(data.get("weekly_target_hours") ?? "").trim();
-    const target = targetRaw === "" ? 0 : Number(targetRaw);
+    const duration = validateDuration(targetRaw);
     const color = String(data.get("color") ?? "");
-    if (!name || !Number.isFinite(target) || target < 0 || !/^#[0-9a-f]{6}$/i.test(color)) {
-      setError("Enter a name, a non-negative target, and a valid color.");
+    if (duration.error || duration.value === undefined) {
+      setError(duration.error ?? durationError);
+      return;
+    }
+    if (!name || !/^#[0-9a-f]{6}$/i.test(color)) {
+      setError("Enter an activity name and a valid color.");
       return;
     }
     setError(null);
     updateMutation.mutate({
       id: activity.id,
-      data: { name, weekly_target_hours: target, color },
+      data: { name, weekly_target_hours: duration.value, color },
     });
   };
 
@@ -94,14 +120,33 @@ export function ActivitiesManager(): ReactElement {
         <p className="mt-1 text-sm text-slate-400">Manage task types, weekly targets, and category colors.</p>
       </div>
 
-      <form onSubmit={handleCreate} className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 sm:grid-cols-[minmax(12rem,1fr)_10rem_5rem_auto] sm:items-end">
+      <form noValidate onSubmit={handleCreate} className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 sm:grid-cols-[minmax(12rem,1fr)_10rem_5rem_auto] sm:items-end">
         <label className="space-y-1 text-xs text-slate-400">
           <span>Activity name</span>
           <input className={inputClass} maxLength={255} required value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
         </label>
         <label className="space-y-1 text-xs text-slate-400">
           <span>Weekly target hours</span>
-          <input className={inputClass} type="number" min="0" step="0.5" value={draftTargetInput} onChange={(event) => { const raw = event.target.value; setDraftTargetInput(raw); if (raw === "") { setDraft((current) => ({ ...current, weekly_target_hours: 0 })); return; } const parsed = Number(raw); if (Number.isFinite(parsed)) setDraft((current) => ({ ...current, weekly_target_hours: parsed })); }} onBlur={() => { const parsed = Number(draftTargetInput); const normalized = draftTargetInput.trim() === "" || !Number.isFinite(parsed) || parsed < 0 ? "0" : String(parsed); setDraftTargetInput(normalized); setDraft((current) => ({ ...current, weekly_target_hours: Number(normalized) })); }} />
+          <input
+            className={inputClass}
+            type="number"
+            min="0.25"
+            max="24"
+            step="0.25"
+            required
+            value={draftTargetInput}
+            onKeyDown={(event) => { if (["-", "e", "E"].includes(event.key)) event.preventDefault(); }}
+            onChange={(event) => {
+              const raw = event.target.value;
+              handleDurationInput(raw, setDraftTargetInput);
+              const parsed = Number(raw);
+              if (raw === "" || raw.startsWith("-") || !Number.isFinite(parsed)) {
+                setDraft((current) => ({ ...current, weekly_target_hours: 0 }));
+              } else {
+                setDraft((current) => ({ ...current, weekly_target_hours: parsed }));
+              }
+            }}
+          />
         </label>
         <label className="space-y-1 text-xs text-slate-400">
           <span>Color</span>
@@ -121,9 +166,9 @@ export function ActivitiesManager(): ReactElement {
         {(activitiesQuery.data ?? []).map((activity) => (
           <li key={activity.id} className="py-3">
             {editingId === activity.id ? (
-              <form onSubmit={(event) => { event.preventDefault(); saveActivity(activity, event.currentTarget); }} className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_10rem_5rem_auto_auto] sm:items-end">
+              <form noValidate onSubmit={(event) => { event.preventDefault(); saveActivity(activity, event.currentTarget); }} className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_10rem_5rem_auto_auto] sm:items-end">
                 <label className="space-y-1 text-xs text-slate-400"><span>Name</span><input className={inputClass} name="name" defaultValue={activity.name} required maxLength={255} /></label>
-                <label className="space-y-1 text-xs text-slate-400"><span>Weekly target</span><input className={inputClass} name="weekly_target_hours" type="number" min="0" step="0.5" value={editingTargetInput} onChange={(event) => setEditingTargetInput(event.target.value)} onBlur={() => { const parsed = Number(editingTargetInput); const normalized = editingTargetInput.trim() === "" || !Number.isFinite(parsed) || parsed < 0 ? String(activity.weekly_target_hours) : String(parsed); setEditingTargetInput(normalized); }} /></label>
+                <label className="space-y-1 text-xs text-slate-400"><span>Weekly target hours</span><input className={inputClass} name="weekly_target_hours" type="number" min="0.25" max="24" step="0.25" required value={editingTargetInput} onKeyDown={(event) => { if (["-", "e", "E"].includes(event.key)) event.preventDefault(); }} onChange={(event) => handleDurationInput(event.target.value, setEditingTargetInput)} /></label>
                 <label className="space-y-1 text-xs text-slate-400"><span>Color</span><input className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 p-1" name="color" type="color" defaultValue={activity.color} /></label>
                 <button type="submit" disabled={updateMutation.isPending} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">Save</button>
                 <button type="button" onClick={() => { setEditingId(null); setEditingTargetInput(""); setError(null); }} className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Cancel</button>

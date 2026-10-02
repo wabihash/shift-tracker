@@ -17,8 +17,9 @@ export const activitySchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   weekly_target_hours: z
     .number()
-    .min(0.5, "Minimum target is 0.5 hours")
-    .max(50, "Maximum target is 50 hours"),
+    .min(0.25, "Please enter a valid positive duration (at least 0.25 hours).")
+    .max(24, "Duration cannot exceed 24 hours.")
+    .multipleOf(0.25, "Duration must use 0.25-hour increments."),
   color: hexColorSchema,
 });
 

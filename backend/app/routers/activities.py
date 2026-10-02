@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, delete, select
 
@@ -13,6 +14,29 @@ from app.models import Activity, PlannedShift, SessionLog, UserProfile
 from app.routers.profile import create_empty_profile
 
 router = APIRouter(prefix="/api", tags=["activities"])
+
+
+def _validate_activity_hours(value: object) -> object:
+    if value is None:
+        return value
+    if isinstance(value, str) and not value.strip():
+        raise ValueError("Duration must be greater than 0 hours.")
+    try:
+        hours = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return value
+
+    if not hours.is_finite():
+        raise ValueError("Duration must be a finite number.")
+    if hours <= 0:
+        raise ValueError("Duration must be greater than 0 hours.")
+    if hours < Decimal("0.25"):
+        raise ValueError("Duration must be at least 0.25 hours.")
+    if hours > Decimal("24"):
+        raise ValueError("Duration cannot exceed 24 hours.")
+    if hours * 4 != (hours * 4).to_integral_value():
+        raise ValueError("Duration must use 0.25-hour increments.")
+    return float(hours)
 
 
 class ActivityRead(BaseModel):
@@ -27,14 +51,27 @@ class ActivityRead(BaseModel):
 
 class ActivityCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    weekly_target_hours: float = Field(default=0.0, ge=0.0)
+    weekly_target_hours: float = Field(
+        ..., gt=0, le=24,
+        description="Hours must be positive and between 0.25 and 24",
+    )
     color: str = Field(default="#6366f1", min_length=1, max_length=32)
+
+    @field_validator("weekly_target_hours", mode="before")
+    @classmethod
+    def validate_weekly_target_hours(cls, value: object) -> object:
+        return _validate_activity_hours(value)
 
 
 class ActivityUpdateBody(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    weekly_target_hours: float | None = Field(default=None, ge=0.0)
+    weekly_target_hours: float | None = Field(default=None, gt=0, le=24)
     color: str | None = Field(default=None, min_length=1, max_length=32)
+
+    @field_validator("weekly_target_hours", mode="before")
+    @classmethod
+    def validate_weekly_target_hours(cls, value: object) -> object:
+        return _validate_activity_hours(value)
 
 
 def _get_owned_activity(
