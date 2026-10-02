@@ -162,7 +162,7 @@ export function LiveStopwatch({
     setManualSessionOpen(true);
   }, [manualSessionRequest]);
 
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     const state = useTimerStore.getState();
     if (state.timerKind === "break") {
       stopTimer();
@@ -195,13 +195,28 @@ export function LiveStopwatch({
       breakOverrunMinutes: state.breakOverrunMinutes,
     });
     setDeductionOpen(true);
-  };
+  }, [activeActivityId, selectedActivityId, stopTimer]);
 
   const handleDiscard = () => {
     resetTimer();
     setDeductionOpen(false);
     setSessionCapture(null);
   };
+
+  useEffect(() => {
+    const handleShortcutStart = () => {
+      if (canStart) handleStart();
+    };
+    const handleShortcutStop = () => {
+      if (status !== "idle") handleStop();
+    };
+    window.addEventListener("shift-tracker:start", handleShortcutStart);
+    window.addEventListener("shift-tracker:stop", handleShortcutStop);
+    return () => {
+      window.removeEventListener("shift-tracker:start", handleShortcutStart);
+      window.removeEventListener("shift-tracker:stop", handleShortcutStop);
+    };
+  }, [canStart, handleStart, handleStop, status]);
 
   return (
     <div className="space-y-4">
