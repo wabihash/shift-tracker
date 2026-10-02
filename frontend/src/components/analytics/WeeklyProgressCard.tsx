@@ -14,6 +14,9 @@ export interface WeeklyProgressCardProps {
   weeklyBuffer: number;
   dailyBuffer: number;
   hasTrackedSessions?: boolean;
+  plannedSleep: number;
+  loggedSleep: number;
+  hasSleepSessions: boolean;
 }
 
 function remainingDaysInWeek(weekEnd: DateString): number {
@@ -34,6 +37,9 @@ export function WeeklyProgressCard({
   weeklyBuffer,
   dailyBuffer,
   hasTrackedSessions = true,
+  plannedSleep,
+  loggedSleep,
+  hasSleepSessions,
 }: WeeklyProgressCardProps): ReactElement {
   const safeTarget = weeklyTarget;
   const progressRatio = safeTarget > 0 ? Math.min(1, completedHours / safeTarget) : 0;
@@ -48,7 +54,7 @@ export function WeeklyProgressCard({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Weekly Macro Progress
+            Work Goal
           </h3>
           <p className="mt-1 text-xs text-slate-400">
             {safeTarget > 0 ? `${completedHours.toFixed(1)}h of ${safeTarget.toFixed(1)}h target` : "0.0h of 0.0h target"}
@@ -79,9 +85,14 @@ export function WeeklyProgressCard({
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 sm:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-violet-200">Your Weekly Buffer</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3">
+          <p className="text-xs uppercase tracking-wide text-violet-200">Sleep Tracker</p>
+          <p className="mt-1 font-mono text-xl text-slate-100">{loggedSleep.toFixed(1)} / {plannedSleep.toFixed(1)} hrs</p>
+          <p className="mt-1 text-xs text-slate-400">{hasSleepSessions ? `${Math.abs(plannedSleep - loggedSleep).toFixed(1)} hrs ${loggedSleep >= plannedSleep ? "above baseline" : "below baseline"}` : "No sleep logged this week"}</p>
+        </div>
+        <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] p-3">
+          <p className="text-xs uppercase tracking-wide text-emerald-200">Uncommitted Buffer</p>
           <p className="mt-1 font-mono text-xl text-slate-100">{weeklyTarget <= 0 ? "— hrs" : `${weeklyBuffer.toFixed(1)} hrs`}</p>
           <p className="mt-1 text-xs text-slate-400">{weeklyTarget <= 0 ? "Set your weekly target to calculate your buffer margin." : `Daily Average Buffer: ${dailyBuffer.toFixed(1)} hrs/day`}</p>
         </div>

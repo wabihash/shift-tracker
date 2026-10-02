@@ -124,6 +124,7 @@ export interface HistoricalSummaryRow {
   total_deducted_minutes: number;
   late_arrival_minutes: number;
   logged_sleep_hours: number;
+  sleep_target_hours: number;
   weekly_buffer: number;
   daily_buffer: number;
 }

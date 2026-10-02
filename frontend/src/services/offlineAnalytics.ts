@@ -42,8 +42,9 @@ export function calculateScheduledBreakHours(
  */
 export function calculateWeeklyBuffer(
   weeklyTarget: number,
+  plannedSleep = 56,
 ): { weeklyBuffer: number; dailyBuffer: number } {
-  const weeklyBuffer = Math.max(0, Math.round((168.0 - weeklyTarget) * 10) / 10);
+  const weeklyBuffer = Math.max(0, Math.round((168.0 - weeklyTarget - plannedSleep) * 10) / 10);
   const dailyBuffer = Math.round((weeklyBuffer / 7.0) * 10) / 10;
   return { weeklyBuffer, dailyBuffer };
 }
@@ -135,7 +136,7 @@ export function recalculateWeeklyAnalytics(
     ? current.total_completed_hours
     : Math.round((current.total_completed_hours + netHours) * 100) / 100;
 
-  const weekly_target_goal = options?.activities?.reduce((sum, activity) => sum + activity.weekly_target_hours, 0) || options?.profile?.weekly_target_hours || current.weekly_target_goal;
+  const weekly_target_goal = options?.profile?.weekly_target_hours ?? current.weekly_target_goal;
   const overall_percentage =
     weekly_target_goal > 0
       ? Math.min(100, Math.round((total_completed_hours / weekly_target_goal) * 10000) / 100)
@@ -154,7 +155,9 @@ export function recalculateWeeklyAnalytics(
   const total_late_arrival_min = current.total_late_arrival_min + lateMinutes;
 
   // 5. Recalculate actual break hours and break overrun minutes
-  const { weeklyBuffer, dailyBuffer } = calculateWeeklyBuffer(weekly_target_goal);
+  const sleepActivity = options?.activities?.find((activity) => activity.name.trim().toLowerCase() === "sleep");
+  const plannedSleep = sleepActivity && sleepActivity.weekly_target_hours > 0 ? sleepActivity.weekly_target_hours : 56;
+  const { weeklyBuffer, dailyBuffer } = calculateWeeklyBuffer(weekly_target_goal, plannedSleep);
 
   return {
     weekly_target_goal,

@@ -94,10 +94,10 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
     "Unable to load analytics dashboard.";
 
   const analytics = analyticsQuery.data;
-  const activityTarget = (activitiesQuery.data ?? []).reduce((sum, activity) => sum + activity.weekly_target_hours, 0);
-  const weeklyTarget = activityTarget > 0 ? activityTarget : (profileQuery.data?.weekly_target_hours ?? 0);
+  const weeklyTarget = profileQuery.data?.weekly_target_hours ?? analyticsQuery.data?.weekly_target_goal ?? 0;
   const trackedSessions = sessionsQuery.data ?? [];
-  const completedHours = trackedSessions.reduce((sum, session) => sum + session.net_minutes / 60, 0);
+  const sleepActivityIds = new Set((activitiesQuery.data ?? []).filter((activity) => activity.name.trim().toLowerCase() === "sleep").map((activity) => activity.id));
+  const completedHours = trackedSessions.filter((session) => !sleepActivityIds.has(session.activity_id)).reduce((sum, session) => sum + session.net_minutes / 60, 0);
   const overallPercentage = weeklyTarget > 0 ? Math.min(100, completedHours / weeklyTarget * 100) : 0;
   const activeWeekHasSessions = (sessionsQuery.data ?? []).length > 0;
   const isNewUser = !profileQuery.data?.weekly_target_hours || ((activitiesQuery.data?.length ?? 0) === 0 && !activeWeekHasSessions);
@@ -183,8 +183,11 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
               overallPercentage={overallPercentage}
               weekEnd={weekEnd}
               sessions={trackedSessions}
-              weeklyBuffer={weeklyTarget > 0 ? Math.max(0, 168 - weeklyTarget) : 0}
-              dailyBuffer={weeklyTarget > 0 ? Math.round((Math.max(0, 168 - weeklyTarget) / 7) * 10) / 10 : 0}
+              weeklyBuffer={analytics?.weekly_buffer ?? 0}
+              dailyBuffer={analytics?.daily_buffer ?? 0}
+              plannedSleep={(() => { const sleep = activitiesQuery.data?.find((a) => a.name.trim().toLowerCase() === "sleep"); return sleep && sleep.weekly_target_hours > 0 ? sleep.weekly_target_hours : 56; })()}
+              loggedSleep={analytics?.logged_sleep_hours ?? 0}
+              hasSleepSessions={(analytics?.logged_sleep_hours ?? 0) > 0}
               hasTrackedSessions={activeWeekHasSessions}
             />
             <CapAlertBanner
