@@ -35,6 +35,7 @@ class UserProfile(SQLModel, table=True):
     user_id: int | None = Field(default=None, foreign_key="users.id", index=True, unique=True)
     user_name: Optional[str] = Field(default=None, max_length=255)
     weekly_target_hours: float = Field(default=0.0)
+    week_start_day: int = Field(default=1, ge=0, le=6)
     created_at: datetime = Field(default_factory=_utc_now)
 
     shift_rules: list["ShiftRule"] = Relationship(

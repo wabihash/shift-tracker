@@ -92,7 +92,10 @@ def get_history_summary(
     groups: dict[date, list[SessionLog]] = {}
     for log in logs:
         if group_by == "week":
-            period_start = log.logged_date - timedelta(days=log.logged_date.weekday())
+            week_start_day = profile.week_start_day if profile else 1
+            python_anchor = (week_start_day - 1) % 7
+            offset = (log.logged_date.weekday() - python_anchor) % 7
+            period_start = log.logged_date - timedelta(days=offset)
         else:
             period_start = log.logged_date.replace(day=1)
         groups.setdefault(period_start, []).append(log)

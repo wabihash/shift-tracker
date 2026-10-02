@@ -43,11 +43,13 @@ class ProfileRead(BaseModel):
     user_id: int
     user_name: str | None
     weekly_target_hours: float
+    week_start_day: int
     shift_rules: list[ShiftRuleRead]
 
 
 class ProfileUpdateBody(BaseModel):
-    weekly_target_hours: float = Field(ge=0.0)
+    weekly_target_hours: float | None = Field(default=None, ge=0.0)
+    week_start_day: int | None = Field(default=None, ge=0, le=6)
 
 
 class ShiftRuleUpdateBody(BaseModel):
@@ -126,7 +128,10 @@ def update_profile(
     user_id: Annotated[int, Depends(get_current_user)],
 ) -> UserProfile:
     profile = create_empty_profile(session, user_id)
-    profile.weekly_target_hours = body.weekly_target_hours
+    if body.weekly_target_hours is not None:
+        profile.weekly_target_hours = body.weekly_target_hours
+    if body.week_start_day is not None:
+        profile.week_start_day = body.week_start_day
     session.add(profile)
     session.commit()
     session.refresh(profile)

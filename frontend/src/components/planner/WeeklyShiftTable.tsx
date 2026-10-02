@@ -10,6 +10,7 @@ import { useShiftStore } from "../../stores/useShiftStore";
 import { useTimerStore } from "../../stores/useTimerStore";
 import type { Activity, SessionLog, ShiftRule } from "../../types/schema";
 import { getAppNow } from "../../utils/serverClock";
+import { useWeekStartDay } from "../../hooks/useWeekStartDay";
 
 function dateKey(date: Date): string {
   const year = date.getFullYear();
@@ -61,13 +62,14 @@ export function WeeklyShiftTable(): ReactElement {
   const currentShiftNumber = useShiftStore((state) => state.currentShiftNumber);
   const timerStatus = useTimerStore((state) => state.status);
   const activeActivityId = useTimerStore((state) => state.activeActivityId);
+  const [weekStartDay] = useWeekStartDay();
   const [now, setNow] = useState(getAppNow);
   useEffect(() => {
     const id = window.setInterval(() => setNow(getAppNow()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
-  const weekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
+  const weekStart = useMemo(() => startOfWeek(now, { weekStartsOn: weekStartDay }), [now, weekStartDay]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
   const dates = useMemo(() => ({ start: dateKey(weekStart), end: dateKey(addDays(weekStart, 6)) }), [weekStart]);
   const sessionsQuery = useQuery({

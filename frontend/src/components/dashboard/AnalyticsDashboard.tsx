@@ -1,11 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { endOfWeek, format, startOfWeek } from "date-fns";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { addDays, format, parseISO, startOfWeek } from "date-fns";
 import { AlertCircle, CalendarRange, Loader2, Play, ClockPlus, Timer } from "lucide-react";
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { getActivities } from "../../api/activities";
 import { getWeeklyAnalytics } from "../../api/analytics";
-import { getProfile } from "../../api/profile";
+import { getProfile, updateProfile } from "../../api/profile";
 import { getSessions } from "../../api/sessions";
 import { useAuthToken } from "../../auth/AuthTokenContext";
 import type { DateString } from "../../types/schema";
@@ -17,6 +17,7 @@ import { WeeklyProgressCard } from "../analytics/WeeklyProgressCard";
 import { BurndownChartSkeleton, WeeklyCardSkeleton } from "../common/SkeletonLoaders";
 import { safeErrorMessage } from "../../api/client";
 import { getAppNow } from "../../utils/serverClock";
+import { useWeekStartDay, type WeekStartDay } from "../../hooks/useWeekStartDay";
 
 interface AnalyticsDashboardProps {
   onStartStopwatch?: () => void;
@@ -27,26 +28,47 @@ function toDateString(date: Date): DateString {
   return format(date, "yyyy-MM-dd");
 }
 
-function getDefaultWeekRange(): { start: DateString; end: DateString } {
-  const now = getAppNow();
-  return {
-    start: toDateString(startOfWeek(now, { weekStartsOn: 1 })),
-    end: toDateString(endOfWeek(now, { weekStartsOn: 1 })),
-  };
-}
-
 export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: AnalyticsDashboardProps): ReactElement {
   const token = useAuthToken();
-  const defaultWeek = useMemo(() => getDefaultWeekRange(), []);
-  const [weekStart, setWeekStart] = useState<DateString>(defaultWeek.start);
-  const [weekEnd, setWeekEnd] = useState<DateString>(defaultWeek.end);
+  const queryClient = useQueryClient();
+  const [weekStartDay, setWeekStartDay] = useWeekStartDay();
+  const [now, setNow] = useState(getAppNow);
+  const [weekStart, setWeekStart] = useState<DateString>(() => toDateString(startOfWeek(getAppNow(), { weekStartsOn: weekStartDay })));
+  const [followCurrentPeriod, setFollowCurrentPeriod] = useState(true);
+  const userChangedAnchor = useRef(false);
   const [view, setView] = useState<"week" | "history">("week");
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(getAppNow()), 15_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const profileQuery = useQuery({
     queryKey: ["profile"],
     queryFn: getProfile,
     enabled: !!token,
   });
+
+  useEffect(() => {
+    const profileDay = profileQuery.data?.week_start_day;
+    if (profileDay === undefined || userChangedAnchor.current) return;
+    if (profileDay < 0 || profileDay > 6) return;
+    const anchorDay = profileDay as WeekStartDay;
+    setWeekStartDay(anchorDay);
+    setWeekStart(toDateString(startOfWeek(now, { weekStartsOn: anchorDay })));
+  }, [now, profileQuery.data?.week_start_day, setWeekStartDay]);
+
+  const currentPeriodStart = toDateString(startOfWeek(now, { weekStartsOn: weekStartDay }));
+  useEffect(() => {
+    if (followCurrentPeriod && weekStart !== currentPeriodStart) {
+      setWeekStart(currentPeriodStart);
+    }
+  }, [currentPeriodStart, followCurrentPeriod, weekStart]);
+
+  const weekEnd = useMemo(
+    () => toDateString(addDays(parseISO(weekStart), 6)),
+    [weekStart],
+  );
 
   const analyticsQuery = useQuery({
     queryKey: ["analytics", weekStart, weekEnd],
@@ -102,6 +124,21 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
   const activeWeekHasSessions = (sessionsQuery.data ?? []).length > 0;
   const isNewUser = !profileQuery.data?.weekly_target_hours || ((activitiesQuery.data?.length ?? 0) === 0 && !activeWeekHasSessions);
 
+  const handleWeekStartChange = (value: DateString) => {
+    if (!value) return;
+    const selectedStart = parseISO(value);
+    const selectedDay = selectedStart.getDay() as WeekStartDay;
+    userChangedAnchor.current = true;
+    setWeekStart(value);
+    setWeekStartDay(selectedDay);
+    setFollowCurrentPeriod(value === toDateString(startOfWeek(now, { weekStartsOn: selectedDay })));
+    void updateProfile({ week_start_day: selectedDay })
+      .then((profile) => queryClient.setQueryData(["profile"], profile))
+      .catch(() => {
+        // The local preference remains available if the profile update is offline.
+      });
+  };
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -121,7 +158,7 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
             <input
               type="date"
               value={weekStart}
-              onChange={(event) => setWeekStart(event.target.value)}
+              onChange={(event) => handleWeekStartChange(event.target.value)}
               className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100"
             />
           </label>
@@ -130,8 +167,9 @@ export function AnalyticsDashboard({ onStartStopwatch, onLogPastSession }: Analy
             <input
               type="date"
               value={weekEnd}
-              onChange={(event) => setWeekEnd(event.target.value)}
-              className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100"
+              readOnly
+              aria-readonly="true"
+              className="ml-2 w-36 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-400"
             />
           </label>
         </div>

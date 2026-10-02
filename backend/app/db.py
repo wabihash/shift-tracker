@@ -5,6 +5,7 @@ from collections.abc import Generator
 from typing import Any
 
 from dotenv import load_dotenv
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -60,3 +61,9 @@ def init_db() -> None:
     import app.models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    profile_columns = {column["name"] for column in inspect(engine).get_columns("user_profiles")}
+    if "week_start_day" not in profile_columns:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE user_profiles ADD COLUMN week_start_day INTEGER NOT NULL DEFAULT 1"
+            ))

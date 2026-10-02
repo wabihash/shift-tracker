@@ -19,6 +19,7 @@ export interface UserProfile {
   user_id?: number;
   user_name: string | null;
   weekly_target_hours: number;
+  week_start_day: number;
   /** Present on persisted records; omitted on some profile API responses. */
   created_at?: DateTimeString;
 }
@@ -137,7 +138,8 @@ export interface HistoricalSummaryResponse {
 }
 
 export interface ProfileUpdateInput {
-  weekly_target_hours: number;
+  weekly_target_hours?: number;
+  week_start_day?: number;
 }
 
 export interface ShiftRuleUpdateInput {
